@@ -1,0 +1,9 @@
+# Prettier formats TypeScript, JavaScript, JSON and CSS only. Markdown and YAML keep
+# their hand formatting; Python is formatted by ruff.
+*.md
+*.yml
+*.yaml
+package-lock.json
+server/
+docs/drafts/
+fork/vscode/
