@@ -1,0 +1,62 @@
+# Install once: pre-commit install --hook-type pre-commit --hook-type commit-msg
+# Run all: pre-commit run --all-files
+# CI runs the same checks (.github/workflows/ci.yml).
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: detect-private-key
+      - id: no-commit-to-branch
+        args: ["--branch", "master"]
+
+  # Secret scanning (public repo). Docker variant: no Go toolchain needed locally.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks-docker
+
+  # Python hooks use pre-commit's own interpreter (language: python), so they work wherever
+  # pre-commit runs (needs Python >= 3.11 for tomllib); no extra dependencies.
+  - repo: local
+    hooks:
+      - id: size-limits
+        name: source size limits (500 lines/file, 50 lines/function)
+        entry: python tools/check_size.py
+        language: python
+        types: [text]
+      - id: paid-api-guard
+        name: no paid LLM API endpoints outside allowed files
+        entry: python tools/check_paid_api.py
+        language: python
+        types: [text]
+      - id: commit-msg
+        name: conventional commit message
+        entry: python tools/check_commit_msg.py
+        language: python
+        stages: [commit-msg]
+      - id: repo-check-tests
+        name: repo check script tests
+        entry: python -m unittest tools/test_repo_checks.py
+        language: python
+        files: ^tools/
+        pass_filenames: false
+      - id: claude-hook-tests
+        name: claude hook tests
+        entry: node --test .claude/hooks/hooks.test.mjs
+        language: system
+        files: ^(\.claude/hooks/|tools/size_limits\.toml)
+        pass_filenames: false

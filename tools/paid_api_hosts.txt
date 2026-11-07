@@ -1,0 +1,17 @@
+# Paid LLM / embedding API endpoints. Single source of truth for:
+#   - .claude/hooks/pre-bash-guard.mjs (blocks shell network calls)
+#   - tools/check_paid_api.py (CI/pre-commit: no paid endpoint in code or config)
+#   - .claude/settings.json WebFetch denies (kept in sync by .claude/hooks/hooks.test.mjs)
+# One entry per line: a host, or host/path prefix when the host also serves docs.
+api.deepseek.com
+openrouter.ai/api
+api.openai.com
+api.anthropic.com
+generativelanguage.googleapis.com
+api.mistral.ai
+api.together.xyz
+api.fireworks.ai
+api.groq.com
+api.cohere.ai
+api.cohere.com
+api.voyageai.com
