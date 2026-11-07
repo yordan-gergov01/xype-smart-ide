@@ -21,6 +21,7 @@ __pycache__/
 .venv/
 .mypy_cache/
 .ruff_cache/
+.import_linter_cache/
 .pytest_cache/
 .coverage
 coverage.xml
@@ -31,7 +32,7 @@ build/
 
 # Node
 node_modules/
-.pnpm-store/
+coverage/
 *.tsbuildinfo
 out/
 .vite/

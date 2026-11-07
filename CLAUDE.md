@@ -14,8 +14,10 @@ Requirements: [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) · Plan: [docs/plan
 | Path | What lives there |
 |---|---|
 | `proto/xype/v1/` | gRPC contracts (buf v2) |
-| `server/<module>/` | Python packages `xype_<module>`: gateway, orchestrator, router, llm, prompts, indexing, embeddings, retrieval, cache, tasks, agents, connectors, storage, security, observability, evals |
-| `server/apps/` | Composition roots: api, grpc, worker, scheduler — the only place adapters are wired |
+| `server/backend/` | Gateway (REST `/api/v1`, gRPC): `api/`, `grpc/` → `services/<feature>/` (orchestrator, router, retrieval, cache, tasks, agents, connectors, …) → `dal/<feature>/`; `main.py` is its composition root |
+| `server/llm/`, `server/indexer/` | Workers over RabbitMQ (LLM providers; embeddings + indexing); no database access |
+| `server/common_lib/` | Shared by all services: errors, domain types, settings, logging, models, schemas, message contract |
+| `server/migrations/`, `server/prompts/`, `server/evals/`, `server/tests/` | Alembic, versioned prompts, eval harness, tests (`unit/`, `integration/`, `architecture/`) |
 | `clients/xype-ai/` | VS Code extension: context engine, gRPC client, `ToolExecutor` |
 | `clients/webview-ui/`, `clients/admin-dashboard/` | React + TS + Vite |
 | `packages/design-tokens/` | Single source of brand tokens |
@@ -26,11 +28,12 @@ Requirements: [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) · Plan: [docs/plan
 ## Commands
 
 ```bash
-uv sync --directory server                 # Python deps (Python 3.12)
-uv run --directory server ruff check . && uv run --directory server ruff format --check .
-uv run --directory server mypy             # strict
-uv run --directory server pytest           # unit; add -m integration for testcontainers
-pnpm install && pnpm lint && pnpm typecheck && pnpm test
+# Python 3.12 venv in server/.venv, setup in server/README.md (pip + hashed requirements)
+python tools/server_tool.py ruff check . && python tools/server_tool.py ruff format --check .
+python tools/server_tool.py mypy           # strict
+python tools/server_tool.py lint-imports   # layer contracts
+python tools/server_tool.py pytest         # unit; add -m integration for testcontainers
+npm ci && npm run check                    # Node: npm only; format, lint, tsc, tests, jscpd
 python tools/check_size.py                 # 500-line source limit
 pre-commit run --all-files                 # everything CI runs that is fast
 docker compose -f deploy/docker-compose.yml up -d
@@ -40,7 +43,7 @@ Some commands become available as Phase 1 slices land; see `docs/plan.md`. Repo 
 
 ## Rules
 
-All files in `.claude/rules/` apply and override defaults. Start with [00-workflow](.claude/rules/00-workflow.md) and [01-git](.claude/rules/01-git.md).
+All files in `.claude/rules/` apply and override defaults. Structure follows the XYPE templates `template_core` and `template_web` (ADR-0006). Start with [00-workflow](.claude/rules/00-workflow.md) and [01-git](.claude/rules/01-git.md).
 
 ## Definition of done
 

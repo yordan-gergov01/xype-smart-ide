@@ -1,7 +1,7 @@
 ---
 paths:
   - "server/prompts/**"
-  - "server/orchestrator/**"
+  - "server/backend/services/orchestrator/**"
   - "server/llm/**"
   - "server/evals/**"
 ---

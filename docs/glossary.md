@@ -59,3 +59,10 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 **Hard cap**: the monthly limit above which every paid call is blocked.
 
 **Cost ledger**: the record of every model call's tokens and USD cost.
+
+## Code structure
+
+**Feature**: one brief module (retrieval, cache, router, …) as it appears in the server: a package per layer under `backend/api`, `backend/services` and `backend/dal` (ADR-0006).
+_Avoid_: package (means a Python distribution here)
+
+**Layer**: one of `api`/`grpc` (transport), `services` (business rules) and `dal` (data access); imports point only downwards.

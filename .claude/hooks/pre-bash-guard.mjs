@@ -13,9 +13,13 @@ const SECRET_FILE =
 const FILE_READER =
   /(^|[;&|(\n]\s*)(cat|type|less|more|head|tail|bat|nl|grep|rg|sed|awk|cp|copy|mv|source|\.|Get-Content|gc|Select-String|Copy-Item)\b/i;
 
-/** Remove quoted strings so messages like -m "why force push is banned" don't trigger rules. */
+/**
+ * Remove quoted strings so messages like -m "why force push is banned" don't trigger rules.
+ * @param {string} c
+ */
 const unquote = (c) => c.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
 
+/** @type {{ test: (command: string) => boolean, reason: string }[]} */
 const RULES = [
   {
     test: (c) =>

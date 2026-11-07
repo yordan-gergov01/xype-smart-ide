@@ -11,8 +11,11 @@ paths:
 - Do define module interfaces as `interface` and export them from the package entry point only.
 - Do use `readonly` for data that is not mutated; prefer discriminated unions over boolean flags.
 - TypeScript is pinned to 6.0.x until typescript-eslint supports 7 (ADR-0008).
+- Do use npm only (workspaces, exact versions, `npm ci`). Never add pnpm or yarn files.
 
 ## React + Vite (webviews, admin dashboard)
+- Do follow the template_web layout: `src/features/<feature>/`, `src/components/{ui,layout}/`, `src/lib/`, `src/utils/`, `src/config/`, `src/types/`, `src/providers/`, `src/pages/`, `src/routes/`; cross-folder imports through the `@/` alias.
+- Never import one feature from another; pages compose features. Shared code never imports features, pages or routes (ESLint `no-restricted-imports` in the client's config, as in template_web).
 - Do use function components and hooks; keep components small and presentational, logic in hooks.
 - Do take all colors, fonts, radius and spacing from `packages/design-tokens`. Never hard-code brand values.
 - Do make UI keyboard-first and accessible (labels, focus order, contrast).

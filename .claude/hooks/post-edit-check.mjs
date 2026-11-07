@@ -6,21 +6,31 @@ import path from 'node:path';
 import { PROJECT_DIR, loadSizeLimits, readStdinJson, relToProject } from './lib.mjs';
 
 const TIMEOUT_MS = 20_000;
+// The server's virtual environment (server/README.md); its layout differs per platform.
+const SERVER_BIN = path.join(
+  PROJECT_DIR,
+  'server',
+  '.venv',
+  process.platform === 'win32' ? 'Scripts' : 'bin',
+);
 
-function run(cmd, args) {
+/**
+ * @param {string} cmd
+ * @param {string[]} args
+ * @param {string} [cwd]
+ */
+function run(cmd, args, cwd = PROJECT_DIR) {
   const r = spawnSync(cmd, args, {
-    cwd: PROJECT_DIR,
+    cwd,
     encoding: 'utf8',
     timeout: TIMEOUT_MS,
     shell: false,
   });
-  return {
-    ok: r.status === 0,
-    out: `${r.stdout ?? ''}${r.stderr ?? ''}`.trim(),
-    missing: r.error?.code === 'ENOENT',
-  };
+  const reason = r.error ? `${r.error.message}\n` : '';
+  return { ok: r.status === 0, out: `${reason}${r.stdout ?? ''}${r.stderr ?? ''}`.trim() };
 }
 
+/** @param {string} rel */
 function sizeProblem(rel) {
   const limits = loadSizeLimits();
   if (!limits.extensions.has(path.extname(rel)) || limits.exempt.some((re) => re.test(rel)))
@@ -32,15 +42,18 @@ function sizeProblem(rel) {
     : null;
 }
 
+/** @param {string} rel */
 function lintProblem(rel) {
   const abs = path.join(PROJECT_DIR, rel);
-  if (rel.endsWith('.py') && existsSync(path.join(PROJECT_DIR, 'server', 'pyproject.toml'))) {
-    run('uv', ['run', '--directory', 'server', 'ruff', 'format', abs]);
-    const check = run('uv', ['run', '--directory', 'server', 'ruff', 'check', '--fix', abs]);
-    return check.ok || check.missing ? null : `ruff:\n${check.out}`;
+  const ruff = path.join(SERVER_BIN, process.platform === 'win32' ? 'ruff.exe' : 'ruff');
+  if (rel.startsWith('server/') && rel.endsWith('.py') && existsSync(ruff)) {
+    const serverDir = path.join(PROJECT_DIR, 'server');
+    run(ruff, ['format', abs], serverDir);
+    const check = run(ruff, ['check', '--fix', abs], serverDir);
+    return check.ok ? null : `ruff:\n${check.out}`;
   }
   const eslint = path.join(PROJECT_DIR, 'node_modules', 'eslint', 'bin', 'eslint.js');
-  if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(rel) && existsSync(eslint) && !rel.startsWith('.claude/')) {
+  if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(rel) && existsSync(eslint)) {
     const check = run(process.execPath, [eslint, '--fix', abs]);
     return check.ok ? null : `eslint:\n${check.out}`;
   }

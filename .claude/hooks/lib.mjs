@@ -14,7 +14,10 @@ export function readStdinJson() {
   }
 }
 
-/** Same glob subset as tools/check_size.py: `**\/`, `**`, `*`, `?`. */
+/**
+ * Same glob subset as tools/check_size.py: `**\/`, `**`, `*`, `?`.
+ * @param {string} glob
+ */
 export function globToRegex(glob) {
   let out = '';
   for (let i = 0; i < glob.length;) {
@@ -31,7 +34,7 @@ export function globToRegex(glob) {
       out += '[^/]';
       i += 1;
     } else {
-      out += glob[i].replace(/[.+^${}()|[\]\\]/g, '\\$&');
+      out += glob.charAt(i).replace(/[.+^${}()|[\]\\]/g, '\\$&');
       i += 1;
     }
   }
@@ -44,10 +47,12 @@ export function loadSizeLimits() {
     /#[^\n"]*$/gm,
     '',
   );
+  /** @param {string} key */
   const int = (key) => Number(new RegExp(`^${key}\\s*=\\s*(\\d+)`, 'm').exec(text)?.[1]);
+  /** @param {string} key */
   const arr = (key) => {
     const body = new RegExp(`^${key}\\s*=\\s*\\[([\\s\\S]*?)\\]`, 'm').exec(text)?.[1] ?? '';
-    return [...body.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+    return [...body.matchAll(/"([^"]*)"/g)].map((m) => m[1] ?? '');
   };
   return {
     maxFileLines: int('max_file_lines'),
@@ -65,7 +70,10 @@ export function loadPaidApiPatterns() {
     .map((h) => new RegExp(h.replace(/[.+^${}()|[\]\\]/g, '\\$&'), 'i'));
 }
 
-/** Repo-relative POSIX path, or null when the file is outside the project. */
+/**
+ * Repo-relative POSIX path, or null when the file is outside the project.
+ * @param {string | undefined} filePath
+ */
 export function relToProject(filePath) {
   if (!filePath) return null;
   const rel = path

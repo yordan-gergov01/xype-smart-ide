@@ -1,8 +1,8 @@
-// Run: node --test .claude/hooks/   (also runs in CI)
+// Run: node --test .claude/hooks/hooks.test.mjs   (npm test; also runs in CI)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync, cpSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync, mkdirSync, cpSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,11 @@ import { fileURLToPath } from 'node:url';
 const HOOKS = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HOOKS, '..', '..');
 
+/**
+ * @param {string} name
+ * @param {unknown} payload
+ * @param {string} [projectDir]
+ */
 function runHook(name, payload, projectDir = ROOT) {
   const r = spawnSync(process.execPath, [path.join(HOOKS, name)], {
     input: JSON.stringify(payload),
@@ -19,6 +24,7 @@ function runHook(name, payload, projectDir = ROOT) {
   return { code: r.status, stderr: r.stderr, stdout: r.stdout };
 }
 
+/** @param {string} command */
 const bash = (command) =>
   runHook('pre-bash-guard.mjs', { tool_name: 'Bash', tool_input: { command } });
 
@@ -72,7 +78,7 @@ test('pre-bash-guard allows normal commands', () => {
     'curl -s https://api-docs.deepseek.com/quick_start/pricing',
     'curl -s https://openrouter.ai/docs/faq',
     'grep -rn deepseek docs',
-    'uv run --directory server pytest',
+    'python tools/server_tool.py pytest',
     "git commit -m 'feat(gateway): drain streams on graceful shutdown'",
     'echo reboot-safe wording',
     'git commit -m "docs: explain why git push --force is banned"',
@@ -146,3 +152,42 @@ test('post-edit-check ignores files outside the project', () => {
   });
   assert.equal(r.code, 0);
 });
+
+const VENV_BIN = process.platform === 'win32' ? 'Scripts' : 'bin';
+const RUFF = path.join(
+  ROOT,
+  'server',
+  '.venv',
+  VENV_BIN,
+  process.platform === 'win32' ? 'ruff.exe' : 'ruff',
+);
+
+test('post-edit-check skips ruff when the server venv is missing', () => {
+  const dir = tempProject();
+  mkdirSync(path.join(dir, 'server'));
+  writeFileSync(path.join(dir, 'server', 'bad.py'), 'print(undefined_name)\n');
+  const r = runHook(
+    'post-edit-check.mjs',
+    { tool_input: { file_path: path.join(dir, 'server', 'bad.py') } },
+    dir,
+  );
+  assert.equal(r.code, 0, r.stderr);
+});
+
+test(
+  'post-edit-check reports ruff errors from the server venv',
+  { skip: !existsSync(RUFF) && 'server/.venv not installed' },
+  () => {
+    const dir = tempProject();
+    mkdirSync(path.join(dir, 'server', '.venv', VENV_BIN), { recursive: true });
+    cpSync(RUFF, path.join(dir, 'server', '.venv', VENV_BIN, path.basename(RUFF)));
+    writeFileSync(path.join(dir, 'server', 'bad.py'), 'print(undefined_name)\n');
+    const r = runHook(
+      'post-edit-check.mjs',
+      { tool_input: { file_path: path.join(dir, 'server', 'bad.py') } },
+      dir,
+    );
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /ruff:[\s\S]*F821/);
+  },
+);
