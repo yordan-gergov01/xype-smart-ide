@@ -372,7 +372,7 @@ Build an eval harness that runs only on free models (mock and local) during deve
 
 1. **Templates as first-class context.** Our framework repos are registered as **templates**:
    - architecture, deploy, Grafana, FastAPI template, React+TS template, async queues, and others (paths: `[FILL IN]`).
-   
+
    Requirements:
    - They are indexed like any other repo and always available to retrieval.
    - A "New project from template" wizard in the IDE scaffolds a new repo from one or more templates.
@@ -396,13 +396,13 @@ Build an eval harness that runs only on free models (mock and local) during deve
   - `LLM_PRIMARY=mock`;
   - `LLM_COMPLETION=ollama:<small-fim-coder>`;
   - `EMBEDDER=local:<open-source-code-embedding-model>`.
-  
+
   CI must fail if any paid provider is configured or if a network call to a paid API is attempted (use a network guard in tests).
 - **Mock provider.** It is deterministic and scriptable, and it supports streaming, tool calls, JSON outputs, latency and error injection. With it, reliability features such as timeouts, circuit breakers and race-to-response are fully testable for free.
 - **DeepSeek adapter**, built now but disabled:
   - uses the Anthropic-compatible or OpenAI-compatible API;
   - is tested with recorded fixtures only.
-  
+
   Before enabling it, verify the current prices on DeepSeek's site. My notes from October 2026, *to be verified*:
 
   | | Off-peak | Peak |
@@ -428,12 +428,12 @@ Build an eval harness that runs only on free models (mock and local) during deve
 - **Design system.** Fetch https://xype.io and extract the real design tokens from its CSS:
   - colors (backgrounds, surfaces, text, accents, gradients, borders, states);
   - fonts, radius and spacing.
-  
+
   Put them in a shared `packages/design-tokens` package (JSON plus CSS variables plus TS). From that single source, generate:
   1. the XYPE dark and light color themes for the workbench;
   2. the styles for the React webviews;
   3. the admin-dashboard theme.
-  
+
   If you cannot fetch the site, **stop and ask me** for screenshots or CSS. Never invent brand colors.
 - **Simplified, professional UX:**
   - an opinionated default layout with the AI panel as a first-class view;
@@ -443,7 +443,7 @@ Build an eval harness that runs only on free models (mock and local) during deve
   - inline diff accept/reject;
   - clear model and cost indicators, including a notice when a backup model answered;
   - keyboard-first.
-  
+
   Use the `frontend-design` skill (or equivalent judgment) for distinctive, non-generic UI.
 - **Fork maintenance.** Keep the patches minimal and documented in `fork/patches/`, with a script to rebase onto new Code-OSS releases. Document the build requirements (RAM and time).
 - **Developer workflow.** Develop `xype-ai` in the Extension Development Host first, which needs no fork build. Build the full fork only in the packaging phases.
@@ -737,7 +737,7 @@ Then **stop and wait for my explicit confirmation.** Never commit, push, merge, 
   1. a Claude Code `PostToolUse` hook that warns after edits;
   2. a pre-commit check;
   3. a CI check.
-  
+
   Exempt only lockfiles, generated code (e.g. protobuf stubs), Alembic auto-generated revisions if needed, and upstream Code-OSS sources in the fork. List the exemptions explicitly in one config file.
 - Also enforce ≤ 50 lines per function and a cyclomatic-complexity limit (`ruff` C901 / ESLint `complexity`). If a limit is hit, split by responsibility, not arbitrarily.
 
