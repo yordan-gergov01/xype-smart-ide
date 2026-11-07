@@ -1,0 +1,13 @@
+# Local development and test tooling. Service files (backend.in, llm.in) are added with
+# their services and included here with -r and constrained with -c.
+# Compile: see server/README.md, "Adding or upgrading a dependency".
+
+# Compiles the requirements files.
+uv
+ruff
+mypy
+pytest
+pytest-asyncio
+pytest-cov
+import-linter
+pre-commit
