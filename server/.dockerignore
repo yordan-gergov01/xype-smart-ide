@@ -1,0 +1,20 @@
+# Only what the Dockerfiles copy is needed; keep the build context small and free
+# of secrets and the local virtual environment.
+*
+!backend/
+!common_lib/
+!requirements/
+!tests/
+!pyproject.toml
+
+# Never copy secrets that may sit inside the included folders.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+
+**/__pycache__/
+**/*.py[cod]

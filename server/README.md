@@ -1,13 +1,15 @@
 # XYPE server
 
 Backend (gateway), workers and the shared library, in the layout of XYPE's template_core
-(ADR-0006). Only `common_lib/` exists so far; the backend and the workers arrive with the
-Phase 1 slices in `docs/plan.md`.
+(ADR-0006). The workers arrive with later slices in `docs/plan.md`.
 
 | Path | Responsibility |
 |---|---|
-| `common_lib/` | Code every service imports: errors and domain types today; settings, logging, models, schemas and the message contract later |
+| `backend/` | The API: `main.py` (composition root), `api/` (routes, middleware), `services/`, `dal/`, `messaging/`, `core/` (settings, clients); `Dockerfile` |
+| `common_lib/` | Code every service imports: errors, domain types, settings, logging, tracing, correlation ids; models, schemas and the message contract later |
 | `tests/unit/<package>/` | Unit tests, no I/O |
+| `tests/integration/` | Real Postgres, Redis and RabbitMQ through testcontainers (Docker needed) |
+| `tests/support/` | Fakes and contract suites shared by unit and integration tests (importable as `support`) |
 | `tests/architecture/` | Runs the import-linter contracts from `pyproject.toml` |
 | `requirements/` | `.in` files with direct dependencies, compiled `.txt` files with hashes (ADR-0007) |
 
@@ -51,7 +53,8 @@ pytest --cov
 ```
 
 From the repository root without activating it: `python tools/server_tool.py <tool> [args]`.
-Unit tests run by default; `-m integration` selects the testcontainers tests (from slice 5).
+Unit tests run by default; `pytest -m integration` runs the testcontainers tests (they pull
+the images pinned in `deploy/docker-compose.yml`).
 Coverage must stay at 85% or more.
 
 ## Adding or upgrading a dependency

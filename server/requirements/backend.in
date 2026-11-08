@@ -1,0 +1,22 @@
+# Direct runtime dependencies of the backend service (ADR-0007).
+# Compile before dev.txt; see server/README.md, "Adding or upgrading a dependency".
+# HTTP API and its server.
+fastapi
+uvicorn
+pydantic
+# Settings from environment variables only (ADR-0010).
+pydantic-settings
+# Structured JSON logs (ADR-0011).
+structlog
+# Database access (brief §1): SQLAlchemy 2 async on asyncpg.
+sqlalchemy[asyncio]
+asyncpg
+# Redis cache (brief §1).
+redis
+# RabbitMQ client; the readiness probe connects with it.
+aio-pika
+# Metrics and traces (ADR-0011).
+prometheus-client
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http

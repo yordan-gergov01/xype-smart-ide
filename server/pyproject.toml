@@ -11,7 +11,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = []
 
 [tool.setuptools.packages.find]
-include = ["common_lib*"]
+include = ["common_lib*", "backend*"]
 
 [tool.ruff]
 target-version = "py312"
@@ -61,19 +61,22 @@ max-statements = 40
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["common_lib"]
+known-first-party = ["common_lib", "backend"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 warn_unreachable = true
-files = ["common_lib", "tests"]
+files = ["common_lib", "backend", "tests"]
 # Test folders have no __init__.py; name modules by their path so equally named
 # test files in different folders do not clash.
 explicit_package_bases = true
+mypy_path = "tests"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Makes tests/support importable as `support` from every test module.
+pythonpath = ["tests"]
 addopts = [
     "-ra",
     "--strict-markers",
@@ -92,7 +95,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["common_lib"]
+source = ["common_lib", "backend"]
 
 [tool.coverage.report]
 fail_under = 85
@@ -102,14 +105,46 @@ skip_covered = true
 # Contracts are added once the modules they name exist; a contract naming a
 # missing module fails.
 [tool.importlinter]
-root_packages = ["common_lib"]
+root_packages = ["common_lib", "backend"]
 # Needed so contracts can forbid third-party packages.
 include_external_packages = true
 
-# Everything every service imports stays free of transport, broker, cache and HTTP
-# client code. common_lib.models (SQLAlchemy) joins later and is the only ORM user.
+# Everything every service imports stays free of web, transport, broker, cache, HTTP
+# client and database code. common_lib.models (SQLAlchemy) joins later as the only ORM user.
 [[tool.importlinter.contracts]]
-name = "The shared library imports no transport, broker, cache or HTTP code"
+name = "The shared library imports no web, transport, broker, cache, HTTP or database code"
 type = "forbidden"
 source_modules = ["common_lib"]
-forbidden_modules = ["fastapi", "starlette", "grpc", "aio_pika", "redis", "httpx"]
+forbidden_modules = [
+    "backend", "fastapi", "starlette", "grpc", "aio_pika", "redis", "httpx", "sqlalchemy",
+]
+
+[[tool.importlinter.contracts]]
+name = "Backend layers depend downwards only: api -> services -> dal"
+type = "layers"
+layers = ["backend.api", "backend.services", "backend.dal"]
+
+# The API reaches the stores only through services; it never imports data access,
+# the ORM, the cache or broker clients.
+[[tool.importlinter.contracts]]
+name = "The API layer never touches stores or the broker directly"
+type = "forbidden"
+source_modules = ["backend.api"]
+forbidden_modules = ["backend.dal", "backend.messaging", "sqlalchemy", "redis", "aio_pika"]
+allow_indirect_imports = true
+
+# Business rules see stores, the broker and transports only through Protocols.
+[[tool.importlinter.contracts]]
+name = "Services never import transports, stores or the broker"
+type = "forbidden"
+source_modules = ["backend.services"]
+forbidden_modules = [
+    "backend.api", "backend.messaging", "backend.core",
+    "fastapi", "starlette", "grpc", "sqlalchemy", "redis", "aio_pika",
+]
+
+[[tool.importlinter.contracts]]
+name = "Messaging never imports the API"
+type = "forbidden"
+source_modules = ["backend.messaging"]
+forbidden_modules = ["backend.api", "fastapi", "starlette"]

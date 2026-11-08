@@ -26,7 +26,7 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3 (plus th
 | T20 | Postgres + pgvector HNSW behind `VectorStore` (3.4.6, 3.2) | planned (1–2) | ADR-0020 (planned) | draft: `docs/drafts/schema.sql`; extension: `deploy/docker/postgres/initdb/` |
 | T21 | Data model incl. XYPE tables, no plaintext code column (3.6) | planned (1) | — | draft: `docs/drafts/schema.sql` |
 | T22 | Prompt templates as versioned files (3.6, 2) | planned (4) | ADR-0026 (planned) | rule: `.claude/rules/10-llm-prompts.md` |
-| T23 | Privacy: in-memory decrypt, no plaintext at rest, memory hygiene, no-logging (3.7) | planned (1–2) | ADR-0011 (planned) | rule: `.claude/rules/07-security-privacy.md` |
+| T23 | Privacy: in-memory decrypt, no plaintext at rest, memory hygiene, no-logging (3.7) | in progress (no-logging done; decrypt and memory hygiene in Phase 2) | ADR-0011 | `server/common_lib/logging_config.py`, `server/backend/api/middleware.py`; tests: `server/tests/unit/backend/test_privacy.py` |
 | T24 | Privacy test suite (3.7) | planned (2) | — | — |
 | T25 | Cache-aside Redis with specified key designs + embedding cache (3.8) | planned (3) | ADR-0021 (planned) | — |
 | T26 | Normalised cache keys (3.8) | planned (3) | ADR-0021 (planned) | — |
@@ -34,7 +34,7 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3 (plus th
 | T28 | Invalidation on source change and model/prompt version (3.8) | planned (3) | ADR-0021 (planned) | — |
 | T29 | Race-to-response 200 ms + 100 ms (3.8) | planned (3) | ADR-0022 (planned) | — |
 | T30 | Speculative decoding on vLLM, feature-flagged (3.8) | planned (3, gated) | ADR-0024 (planned) | — |
-| T31 | Stateless services, read/write session split (3.8) | planned (1) | — | — |
+| T31 | Stateless services, read/write session split (3.8) | in progress | ADR-0009, ADR-0010 | stateless backend: `server/backend/main.py`; read/write split with storage (slice 5) |
 | T32 | Strict timeouts with cancellation (3.9) | planned (3) | ADR-0023 (planned) | — |
 | T33 | Circuit breaker per provider/model (3.9) | planned (3) | ADR-0023 (planned) | — |
 | T34 | Retries: capped (interactive), exp. backoff + jitter, max 3 (async) (3.9) | planned (3, 5) | ADR-0023, ADR-0004 | — |

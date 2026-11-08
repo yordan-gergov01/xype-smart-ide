@@ -1,5 +1,8 @@
-# Local development and test tooling. Service files (backend.in, llm.in) are added with
-# their services and included here with -r and constrained with -c.
+# Local development and test tooling on top of the services' dependencies; the
+# constraints keep shared packages at the versions the services use.
+-r backend.in
+-c backend.txt
+
 # Compile: see server/README.md, "Adding or upgrading a dependency".
 
 # Compiles the requirements files.
@@ -10,6 +13,10 @@ pytest
 pytest-asyncio
 pytest-cov
 import-linter
+# ASGI test client for the API tests.
+httpx
+# Real Postgres, Redis and RabbitMQ for the integration tests.
+testcontainers
 pre-commit
 # Reads deploy/docker-compose.yml in the compose drift and hardening tests.
 pyyaml
