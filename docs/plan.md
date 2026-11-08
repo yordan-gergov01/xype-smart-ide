@@ -64,6 +64,13 @@ Dependency notes:
 6. **Currency**: all prices, costs and budgets in USD (DeepSeek bills in USD); `budget_usd_month` replaces the brief's `budget_eur_month` (Q14).
 7. **Drafts location**: proto and schema drafts live in `docs/drafts/` until Phase 1 moves them into `proto/xype/v1/` and Alembic, so `buf breaking` starts from a reviewed baseline.
 
+## 3a. Phase 1 follow-ups found during slices 3–4
+
+- TLS with a local dev CA (brief §3.4) for the edge proxy, gRPC, asyncpg, Redis and AMQP, before the first `/api/v1` or gRPC payload route (Phase 2).
+- Split the Postgres role into a migration owner and a DML-only runtime role with the Alembic baseline (slice 5).
+- Network guard in the test suite with ADR-0012 (slice 7), before adapters for paid or remote services exist.
+- Separate connect and command timeouts for Postgres and Redis from `READINESS_TIMEOUT_SECONDS` when storage and cache traffic arrive (slice 5).
+
 ## 4. Risks
 
 | # | Risk | Impact | Mitigation |
