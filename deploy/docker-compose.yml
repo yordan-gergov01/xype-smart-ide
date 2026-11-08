@@ -6,8 +6,7 @@
 # Images are pinned by tag and digest. Every service runs as a non-root user (except the
 # one-shot model download), with no capabilities, a read-only root filesystem, a memory
 # limit and a healthcheck (the OTel collector image has no shell, so it has none).
-# tests/unit/deploy/test_compose.py checks these rules. Application services join in
-# Phase 1 slice 4.
+# tests/unit/deploy/test_compose.py checks these rules.
 name: xype
 
 x-hardening: &hardening
@@ -60,6 +59,8 @@ services:
     entrypoint: ["sh", "/opt/xype/entrypoint.sh"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      REDIS_BACKEND_USER: ${REDIS_BACKEND_USER:?REDIS_BACKEND_USER must be set}
+      REDIS_BACKEND_PASSWORD: ${REDIS_BACKEND_PASSWORD:?REDIS_BACKEND_PASSWORD must be set}
       # Read by redis-cli in the healthcheck, so the password is not on its command line.
       REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     volumes:
@@ -84,11 +85,16 @@ services:
     user: "100:101" # rabbitmq; the named volume is seeded with its ownership
     entrypoint: ["sh", "/opt/xype/entrypoint.sh"]
     command: ["rabbitmq-server"]
+    environment:
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:?RABBITMQ_VHOST must be set}
+      RABBITMQ_BACKEND_USER: ${RABBITMQ_BACKEND_USER:?RABBITMQ_BACKEND_USER must be set}
+      RABBITMQ_BACKEND_PASSWORD: ${RABBITMQ_BACKEND_PASSWORD:?RABBITMQ_BACKEND_PASSWORD must be set}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./docker/rabbitmq/entrypoint.sh:/opt/xype/entrypoint.sh:ro
-      - ./docker/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
       - ./docker/rabbitmq/conf.d/20-xype.conf:/etc/rabbitmq/conf.d/20-xype.conf:ro
+    tmpfs:
+      - /run/rabbitmq-definitions:uid=100,gid=101,mode=0700
     networks:
       - messaging
     healthcheck:
@@ -99,6 +105,82 @@ services:
       start_period: 30s
     # The broker raises a memory alarm at 60% of this limit; it uses ~160 MiB at rest.
     mem_limit: 384m
+
+  backend:
+    <<: *hardening
+    build:
+      context: ../server
+      dockerfile: backend/Dockerfile
+      target: runtime
+    image: xype-backend:dev
+    user: "10001:10001"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB:?POSTGRES_DB must be set}
+      DB_USER: ${POSTGRES_APP_USER:?POSTGRES_APP_USER must be set}
+      DB_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD must be set}
+      REDIS_HOST: redis
+      REDIS_USER: ${REDIS_BACKEND_USER:?REDIS_BACKEND_USER must be set}
+      REDIS_PASSWORD: ${REDIS_BACKEND_PASSWORD:?REDIS_BACKEND_PASSWORD must be set}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:?RABBITMQ_VHOST must be set}
+      RABBITMQ_USER: ${RABBITMQ_BACKEND_USER:?RABBITMQ_BACKEND_USER must be set}
+      RABBITMQ_PASSWORD: ${RABBITMQ_BACKEND_PASSWORD:?RABBITMQ_BACKEND_PASSWORD must be set}
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,noexec,nosuid,nodev
+    pids_limit: 128
+    # Internal networks only: the backend handles decrypted code and has no route out.
+    networks:
+      - api
+      - data
+      - messaging
+      - telemetry
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      # The image has no curl: a failed request makes Python exit with 1.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # Requests in flight get 10 s after SIGTERM (uvicorn --timeout-graceful-shutdown).
+    # Plus up to 5 s to flush the last spans, and a margin.
+    stop_grace_period: 20s
+    mem_limit: 256m
+
+  # The only service on a network with a published port; forwards to the backend.
+  edge:
+    <<: *hardening
+    image: nginxinc/nginx-unprivileged:1.30.6-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+    user: "101:101" # nginx
+    volumes:
+      - ./docker/edge/nginx.conf:/etc/nginx/nginx.conf:ro
+    tmpfs:
+      - /tmp:uid=101,gid=101,noexec,nosuid,nodev
+    pids_limit: 64
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8080"
+    networks:
+      - edge
+      - api
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    mem_limit: 32m
 
   ollama:
     <<: *hardening
@@ -245,6 +327,11 @@ networks:
     internal: true
   models:
     internal: true
+  # Edge proxy to backend.
+  api:
+    internal: true
+  # The published API port: only the edge proxy joins it.
+  edge: {}
   # Telemetry from the services to the collector and Prometheus scrapes.
   telemetry:
     internal: true

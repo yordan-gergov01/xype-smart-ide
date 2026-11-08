@@ -21,15 +21,15 @@ Written in Phase 1:
 |---|---|---|---|
 | [0007](0007-python-dependencies.md) | Python dependencies: pip with compiled, hashed requirements files | Accepted | §1, §8 |
 | [0008](0008-npm-typescript-tooling.md) | TypeScript tooling: npm workspaces, TypeScript 6.0, ESLint import rules | Accepted | §1, §8 |
+| [0009](0009-no-di-framework.md) | No DI framework: constructor injection in composition roots | Proposed | §2 |
+| [0010](0010-configuration.md) | Configuration via pydantic-settings, environment only | Proposed | §1, §2 |
+| [0011](0011-observability.md) | Observability: structlog JSON, OpenTelemetry, Prometheus; metadata only | Proposed | §1, §3.12 |
 | [0034](0034-local-stack-compose.md) | Local stack: compose networks, least privilege and memory limits | Proposed | §1, §2, §8 |
 
 Planned (written in the phase that makes the decision):
 
 | # | Title | Phase |
 |---|---|---|
-| 0009 | No DI framework: constructor injection in composition roots | 1 |
-| 0010 | Configuration via pydantic-settings, environment only | 1 |
-| 0011 | Observability stack: structlog JSON, OpenTelemetry, Prometheus, Grafana; body-stripping policy | 1 |
 | 0012 | Paid-API guard: network guard in tests, hook, CI check | 1 |
 | 0013 | Single bidirectional gRPC `Session` stream with oneof envelopes | 1–2 |
 | 0014 | Auth: client credentials → short-lived access + refresh tokens; OIDC-ready | 2 |

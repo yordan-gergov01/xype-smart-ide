@@ -28,9 +28,10 @@ communication rules with Docker networks and least-privilege roles.
 Chosen option: **1**.
 
 - Networks: `data` (internal: Postgres, Redis), `messaging` (internal: RabbitMQ),
-  `models` (internal: Ollama), `telemetry` (internal: collector, Prometheus, later the
-  services), `egress` (only the one-shot model download), `ui` (only Prometheus and
-  Grafana, to publish their ports). Services join only the internal networks they
+  `models` (internal: Ollama), `telemetry` (internal: collector, Prometheus, the
+  backend), `api` (internal: edge proxy and backend), `egress` (only the one-shot model
+  download), `ui` (only Prometheus and Grafana, to publish their ports), `edge` (only
+  the edge proxy, to publish the API port). Services join only the internal networks they
   need when they arrive; workers never join `data`. A test fails if any other service
   joins a network with outside access.
 - Ollama: `ollama-pull` runs its own short-lived Ollama server on `egress` to download
@@ -40,21 +41,30 @@ Chosen option: **1**.
   `OLLAMA_REFRESH=1` re-pulls) and refuses `cloud` models, and `ollama.com/api` is in
   `tools/paid_api_hosts.txt` (Ollama's cloud models are paid remote inference).
 - TEI is not in the local stack (ADR-0002); it is for the hosted environment.
-- Only Prometheus and Grafana publish ports, on `127.0.0.1`. The backend's API port
-  joins in slice 4 on an `edge` network.
+- Only the edge proxy (API), Prometheus and Grafana publish ports, all on `127.0.0.1`.
+- The backend handles decrypted code, so it joins internal networks only and has no
+  route out. A published port needs a non-internal network, so an nginx edge proxy
+  (`nginxinc/nginx-unprivileged`, 32 MiB) is the only service on `edge` and forwards to
+  the backend over `api`. It allows only `/healthz` and `/api/v1/` (everything else, including
+  `/readyz` and `/metrics`, is 404), has no access log, logs errors only at `crit` (nginx
+  error lines repeat the query string), keeps bodies in memory (no temp files) and drops
+  client trace headers. Turning off
+  masquerading on a bridge network was tried first: Docker Desktop still routes such a
+  network to the internet (verified), so it is not a control.
 - Every container: image pinned by tag and digest, a non-root user (except the one-shot
   `ollama-pull`), read-only root filesystem, `cap_drop: ALL` with no capabilities added,
   `no-new-privileges`, a memory limit and a healthcheck (except the collector, which has
   no shell, and the one-shot pull). Named volumes are seeded with
   the image's ownership, so Postgres and RabbitMQ need no root entrypoint.
-- Memory: the infrastructure is limited to 3.2 GB of the 4 GB budget, leaving ~0.6 GB
-  for the server's services (slice 4). RabbitMQ stays at 384 MiB: it raises a memory
+- Memory: infrastructure, backend and edge proxy are limited to 3.5 GB of the 4 GB
+  budget, leaving ~0.6 GB for the workers (llm, indexer). RabbitMQ stays at 384 MiB: it raises a memory
   alarm at 60% of its limit.
 - PostgreSQL: a non-superuser application role (explicit `NO*` attributes) owns the
   database; pgvector is created by the superuser at init; the password reaches psql
   through `\getenv`, never a command line. Redis: config rendered into a tmpfs
-  (password, no persistence, `maxmemory 64mb` LRU); per-service ACL users without
-  dangerous commands arrive with the services.
+  (password, no persistence, `maxmemory 64mb` LRU); each service has its own ACL user (the
+  backend: read, write and connection commands only, keys under `xype:`, no channels).
+- Backend and edge proxy: `pids_limit`, and `/tmp` tmpfs with `noexec,nosuid,nodev`.
 - Grafana: telemetry, update checks, sign-up, anonymous access, external snapshots,
   Gravatar and the plugin admin are off.
 - RabbitMQ: vhost `xype` with quorum queues by default (ADR-0004), no guest user;
@@ -74,6 +84,8 @@ Chosen option: **1**.
 - Bad: the OTel collector image has no shell, so it has no container healthcheck;
   Prometheus scrapes it instead.
 - Bad: debugging the stores from the host goes through `docker compose exec`.
+- Bad: one more container (the edge proxy) in the request path; it will also carry
+  gRPC (`grpc_pass`) when the `Session` stream arrives.
 - Bad: `ui` is a normal bridge network, so Prometheus and Grafana have outbound access;
   neither handles code. Removing it (no masquerading) is to be tried for hosting.
 - Risk: Postgres has 384 MiB and the default 64 MB `/dev/shm`; HNSW index builds in

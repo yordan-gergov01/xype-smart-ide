@@ -168,7 +168,7 @@ The 10× numbers above describe the future hosted environment. The dev machine h
 | Observability profile: Prometheus, Grafana, OTel collector | +0.5 GB | `docker compose --profile observability`; limits 0.9 GB (Grafana 13 needs 512 MiB) |
 | TEI CPU with fp32 Qwen3-Embedding-0.6B | +2.5 GB | **not** in the local default; hosted environment only |
 
-Measured on 2026-11-07: default stack ≈ 1.8–2.0 GiB with both models loaded, observability ≈ 0.36–0.42 GiB. The container memory limits (3.2 GB for the infrastructure, ~0.6 GB left for the server) are set in ADR-0034 and docs/runbooks/local-dev.md; the estimates above stay as the planning baseline.
+Measured on 2026-11-07: default stack ≈ 1.8–2.0 GiB with both models loaded, observability ≈ 0.36–0.42 GiB. The container memory limits (3.5 GB for infrastructure and backend, ~0.6 GB left for the workers) are set in ADR-0034 and docs/runbooks/local-dev.md; the estimates above stay as the planning baseline.
 
 Consequences:
 - Docker Desktop's WSL2 memory limit set to ~4–5 GB (`.wslconfig`), documented in the runbook.

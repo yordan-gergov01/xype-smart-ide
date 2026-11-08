@@ -66,3 +66,9 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 _Avoid_: package (means a Python distribution here)
 
 **Layer**: one of `api`/`grpc` (transport), `services` (business rules) and `dal` (data access); imports point only downwards.
+
+**Correlation id**: the id that follows one request across REST, gRPC, RabbitMQ and workers (`x-correlation-id`); it appears in every log line and span of that request.
+
+**Readiness**: whether a service can reach every dependency it needs right now (`/readyz`); liveness (`/healthz`) only says the process runs.
+
+**Edge proxy**: the only container with a published API port; it forwards to the backend, which has no route outside the stack.

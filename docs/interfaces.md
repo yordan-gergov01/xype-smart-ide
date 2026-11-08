@@ -12,7 +12,7 @@ Conventions:
 
 | Section | Protocol(s) | Location |
 |---|---|---|
-| Shared types | `RequestContext`, `ChunkRef`, `ModelRef`, `XypeError` | `server/common_lib/domain.py`, `common_lib/errors.py` (implemented) |
+| Shared types | `RequestContext`, `ChunkRef`, `ModelRef`, `XypeError`, `DependencyUnavailableError` | `server/common_lib/domain.py`, `common_lib/errors.py` (implemented) |
 | Shared types | `SecretBytes` | `server/common_lib` (with the first user, Phase 2) |
 | llm | `LLMProvider` + resilience wrappers | `server/llm/providers/` (worker); the backend reaches it through RabbitMQ and a small `services` Protocol |
 | embeddings | `Embedder` | Protocol in `common_lib`; adapters chosen in slice 6 (used by `indexer` and by retrieval in `backend`) |
@@ -24,7 +24,8 @@ Conventions:
 | prompts | `PromptRegistry` | `backend/services/prompts/`; templates as files in `server/prompts/` |
 | security | `CryptoBox`, `SecretScrubber`, `hmac_id` | `backend/services/security/`; client side in `clients/xype-ai` |
 | connectors | `ConnectorClient` | `backend/services/connectors/` (Protocols), adapters wired in `backend/main.py` |
-| observability | `Metrics` | `common_lib` (used by every service) |
+| observability | `Metrics` | `common_lib` (used by every service); added when services emit metrics; HTTP metrics live in the transport layer (ADR-0011) |
+| health | `DependencyProbe` | `backend/services/health/` (implemented): `name`, `async check()` raising `DependencyUnavailableError`; adapters in `backend/dal/health/`, `backend/messaging/health.py` |
 | agents | agent loop, `ClientToolPort` | `backend/services/agents/`; `ToolExecutor` in `clients/xype-ai` |
 
 ## Shared domain types (sketch)

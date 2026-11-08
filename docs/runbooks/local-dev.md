@@ -1,9 +1,8 @@
 # Local development stack
 
-The infrastructure in `deploy/docker-compose.yml`: PostgreSQL 16 + pgvector, Redis,
-RabbitMQ 4.4 and Ollama, plus Prometheus, Grafana and the OpenTelemetry collector in
-the `observability` profile. The server's own services join in Phase 1 slice 4.
-Design: ADR-0034.
+`deploy/docker-compose.yml` runs the backend behind an edge proxy, PostgreSQL 16 +
+pgvector, Redis, RabbitMQ 4.4 and Ollama, plus Prometheus, Grafana and the
+OpenTelemetry collector in the `observability` profile. Design: ADR-0034, ADR-0011.
 
 ## Prerequisites
 
@@ -15,9 +14,9 @@ Design: ADR-0034.
   memory=5GB
   ```
 
-  Then run `wsl --shutdown` and restart Docker Desktop. The infrastructure is limited to
-  3.2 GB, which leaves about 0.6 GB of the 4 GB budget for the server's own services
-  (scale-estimates §6); a unit test keeps it that way.
+  Then run `wsl --shutdown` and restart Docker Desktop. The default stack (infrastructure
+  and backend) is limited to 3.5 GB, which leaves about 0.6 GB of the 4 GB budget for the
+  workers (scale-estimates §6); a unit test keeps it that way.
 - About 6 GB of disk: the Ollama image and the two models (≈ 1.6 GB download on the
   first start).
 
@@ -50,12 +49,29 @@ access; nothing that handles code does. To update the models, start once with
 docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env ps -a
 ```
 
-| URL (observability profile) | What |
-|---|---|
-| `http://127.0.0.1:3001` | Grafana (`GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`) |
-| `http://127.0.0.1:9090` | Prometheus |
+The first `up` builds the backend image from `server/` (add `--build` after server
+changes).
 
-PostgreSQL, Redis, RabbitMQ and Ollama publish no ports. Reach them with
+| URL | What |
+|---|---|
+| `http://127.0.0.1:8000/healthz` | Backend liveness (through the edge proxy; port `BACKEND_PORT`) |
+| `http://127.0.0.1:3001` | Grafana (observability profile; `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`) |
+| `http://127.0.0.1:9090` | Prometheus (observability profile); scrapes the backend's `/metrics` |
+
+The edge proxy serves only `/healthz` and `/api/v1/`. Readiness (200, or 503 naming the
+unavailable dependency) and metrics stay inside the stack:
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:8000/readyz').read().decode())"
+```
+
+ To export traces, set
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318` and start with the
+observability profile. If port 8000 is taken by another project, set `BACKEND_PORT`.
+
+The backend has no route outside the stack (internal networks only); the edge proxy is
+the only container on the network with the published API port. PostgreSQL, Redis,
+RabbitMQ, Ollama and the backend publish no ports. Reach them with
 `docker compose ... exec`, for example:
 
 ```bash
@@ -84,7 +100,9 @@ Measured on 2026-11-07 (Docker Desktop with 3.7 GiB, CPU only) with `docker stat
 | rabbitmq | 384 MiB | 41–160 MiB (alarm at 60% of the limit, so not lower) |
 | postgres (empty) | 384 MiB | 37–54 MiB |
 | redis | 128 MiB | 9 MiB |
-| **Default stack** | **3200 MiB** | **≈ 1.8–2.0 GiB** |
+| backend (measured 2026-11-08, idle) | 256 MiB | 76 MiB |
+| edge (nginx) | 32 MiB | 4 MiB |
+| **Default stack** | **3488 MiB** | **≈ 1.9–2.1 GiB** |
 | grafana | 512 MiB | 258–314 MiB (thrashed at a 256 MiB limit on first start) |
 | prometheus | 256 MiB | 49 MiB |
 | otel-collector | 128 MiB | 54 MiB |

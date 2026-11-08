@@ -7,7 +7,8 @@ from typing import Any
 import pytest
 import yaml
 
-DEPLOY = Path(__file__).resolve().parents[4] / "deploy"
+ROOT = Path(__file__).resolve().parents[4]
+DEPLOY = ROOT / "deploy"
 COMPOSE: dict[str, Any] = yaml.safe_load((DEPLOY / "docker-compose.yml").read_text("utf-8"))
 SERVICES: dict[str, dict[str, Any]] = COMPOSE["services"]
 NETWORKS: dict[str, dict[str, Any]] = COMPOSE["networks"]
@@ -20,9 +21,13 @@ NON_ROOT_BY_IMAGE = {"otel-collector", "prometheus", "grafana"}
 # Writes the root-owned model volume once, then exits (ADR-0034).
 ROOT_ALLOWED = {"ollama-pull"}
 # The only services allowed on networks with a route outside the stack.
-OPEN_NETWORK_MEMBERS = {"egress": {"ollama-pull"}, "ui": {"prometheus", "grafana"}}
+OPEN_NETWORK_MEMBERS = {
+    "egress": {"ollama-pull"},
+    "ui": {"prometheus", "grafana"},
+    "edge": {"edge"},
+}
 # Stores, broker and models are reached only from inside the stack.
-NO_PORTS = {"postgres", "redis", "rabbitmq", "ollama"}
+NO_PORTS = {"postgres", "redis", "rabbitmq", "ollama", "backend"}
 PINNED_IMAGE = re.compile(r"^[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}$")
 
 
@@ -42,7 +47,13 @@ def test_env_example_matches_compose_variables() -> None:
 @pytest.mark.parametrize("name", sorted(SERVICES))
 def test_service_is_hardened(name: str) -> None:
     service = SERVICES[name]
-    assert PINNED_IMAGE.match(service["image"]), "image must be pinned by tag and digest"
+    if "build" in service:
+        dockerfile = ROOT / "server" / service["build"]["dockerfile"]
+        base = re.search(r"^ARG PYTHON_IMAGE=(\S+)$", dockerfile.read_text("utf-8"), re.MULTILINE)
+        assert base, "built images start from a pinned base image"
+        assert PINNED_IMAGE.match(base.group(1))
+    else:
+        assert PINNED_IMAGE.match(service["image"]), "image must be pinned by tag and digest"
     assert service["read_only"] is True
     assert service["cap_drop"] == ["ALL"]
     assert "cap_add" not in service
@@ -88,10 +99,10 @@ def test_collector_debug_exporter_logs_no_span_contents() -> None:
     assert collector["exporters"]["debug"]["verbosity"] == "basic"
 
 
-def test_default_memory_budget_leaves_room_for_the_server() -> None:
+def test_default_memory_budget_leaves_room_for_the_workers() -> None:
     # One-shot jobs are left out: the model download finishes before ollama starts.
     units = {"m": 1, "g": 1024}
     default = [s for s in SERVICES.values() if "profiles" not in s and s.get("restart") != "no"]
     total = sum(int(s["mem_limit"][:-1]) * units[s["mem_limit"][-1]] for s in default)
-    # 4 GiB in total, of which about 600 MiB are kept for the server's own services.
+    # 4 GiB in total, of which about 600 MiB are kept for the workers (llm, indexer).
     assert total <= 4096 - 600, f"{total} MiB"
