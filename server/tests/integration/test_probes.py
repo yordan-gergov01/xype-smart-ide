@@ -15,7 +15,7 @@ from testcontainers.community.redis import RedisContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-from backend.core.connections import create_database_engine, create_redis_client
+from backend.core.connections import create_database, create_redis_client
 from backend.core.settings import BackendSettings
 from backend.dal.health import DatabaseProbe, RedisProbe
 from backend.messaging.health import BrokerProbe
@@ -83,11 +83,11 @@ def rabbitmq() -> Iterator[BackendSettings]:
 async def test_database_probe_meets_the_contract(postgres: BackendSettings) -> None:
     wrong = postgres.model_copy(update={"db_password": SecretStr("wrong")})
     async with AsyncExitStack() as stack:
-        good, bad = create_database_engine(postgres), create_database_engine(wrong)
+        good, bad = create_database(postgres), create_database(wrong)
         stack.push_async_callback(good.dispose)
         stack.push_async_callback(bad.dispose)
-        await assert_reachable(DatabaseProbe(good))
-        await assert_unreachable(DatabaseProbe(bad))
+        await assert_reachable(DatabaseProbe(good.write_engine))
+        await assert_unreachable(DatabaseProbe(bad.write_engine))
 
 
 async def test_redis_probe_meets_the_contract(redis: BackendSettings) -> None:

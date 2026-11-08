@@ -2,7 +2,8 @@
 #
 # Stages:
 #   deps     virtual environment with the backend's pinned, hash-checked dependencies
-#   runtime  the production image: only common_lib and backend, non-root, read-only
+#   runtime  the production image: common_lib, backend and the migrations, non-root;
+#            the migrate service runs `alembic upgrade head` from it
 #   test     adds the development dependencies and the tests; never shipped
 
 ARG PYTHON_IMAGE=python:3.12.15-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
@@ -27,6 +28,8 @@ FROM base AS runtime
 COPY --from=deps /opt/venv /opt/venv
 COPY common_lib ./common_lib
 COPY backend ./backend
+COPY migrations ./migrations
+COPY alembic.ini ./
 USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=3 \
@@ -40,9 +43,10 @@ FROM deps AS test
 COPY requirements/dev.txt /tmp/requirements/dev.txt
 RUN pip install --require-hashes -r /tmp/requirements/dev.txt
 ENV PYTHONPATH=/app
-COPY pyproject.toml ./
+COPY pyproject.toml alembic.ini ./
 COPY common_lib ./common_lib
 COPY backend ./backend
+COPY migrations ./migrations
 COPY tests ./tests
 RUN chown app:app /app
 USER 10001:10001

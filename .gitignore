@@ -46,7 +46,8 @@ gen/
 # Models, weights, large data
 *.gguf
 *.safetensors
-models/
+# Model weights downloaded for fine-tuning; not server/common_lib/models (code).
+finetune/models/
 finetune/data/
 
 # Editors / OS

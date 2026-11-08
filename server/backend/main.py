@@ -11,10 +11,11 @@ from contextlib import AsyncExitStack, asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from prometheus_client import CollectorRegistry
+from redis.asyncio import Redis
 
 from backend.api.health import router as health_router
 from backend.api.middleware import HttpMetrics, RequestContextMiddleware, UnhandledErrorMiddleware
-from backend.core.connections import create_database_engine, create_redis_client
+from backend.core.connections import Database, create_database, create_redis_client
 from backend.core.settings import BackendSettings
 from backend.dal.health import DatabaseProbe, RedisProbe
 from backend.messaging.health import BrokerProbe
@@ -26,6 +27,16 @@ from common_lib.tracing import configure_tracing
 SERVICE_NAME = "backend"
 
 logger = structlog.get_logger(__name__)
+
+
+def _default_probes(
+    settings: BackendSettings, database: Database, redis: Redis
+) -> tuple[DependencyProbe, ...]:
+    """The primary, the read replica when there is one, Redis and the broker."""
+    probes: list[DependencyProbe] = [DatabaseProbe(database.write_engine)]
+    if database.read_engine is not database.write_engine:
+        probes.append(DatabaseProbe(database.read_engine, name="database_read"))
+    return (*probes, RedisProbe(redis), BrokerProbe(settings))
 
 
 def create_app(
@@ -41,10 +52,10 @@ def create_app(
     tracer_provider = configure_tracing(
         service=SERVICE_NAME, otlp_endpoint=settings.otel_exporter_otlp_endpoint
     )
-    engine = create_database_engine(settings)
+    database = create_database(settings)
     redis = create_redis_client(settings)
     if probes is None:
-        probes = (DatabaseProbe(engine), RedisProbe(redis), BrokerProbe(settings))
+        probes = _default_probes(settings, database, redis)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -53,7 +64,7 @@ def create_app(
         async with AsyncExitStack() as stack:
             # The final span flush is a blocking network call: off the event loop.
             stack.push_async_callback(asyncio.to_thread, tracer_provider.shutdown)
-            stack.push_async_callback(engine.dispose)
+            stack.push_async_callback(database.dispose)
             stack.push_async_callback(redis.aclose)
             yield
         logger.info("backend.stopped")

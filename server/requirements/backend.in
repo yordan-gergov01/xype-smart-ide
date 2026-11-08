@@ -11,6 +11,10 @@ structlog
 # Database access (brief §1): SQLAlchemy 2 async on asyncpg.
 sqlalchemy[asyncio]
 asyncpg
+# Schema migrations (brief §1); run by the one-shot migrate service.
+alembic
+# The vector(1024) column type for SQLAlchemy.
+pgvector
 # Redis cache (brief §1).
 redis
 # RabbitMQ client; the readiness probe connects with it.

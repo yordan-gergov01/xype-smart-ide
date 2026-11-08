@@ -1,28 +1,59 @@
 """Clients for the backend's stores. Created once in the composition root; none of
 them connects until first used, so the API starts even while a store is down."""
 
+from dataclasses import dataclass
+
 from redis.asyncio import Redis
-from sqlalchemy import URL
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from backend.core.settings import BackendSettings
+from common_lib.models.connection import postgres_url
 
 
-def create_database_engine(settings: BackendSettings) -> AsyncEngine:
-    """SQLAlchemy async engine on asyncpg with a bounded pool."""
-    url = URL.create(
-        "postgresql+asyncpg",
-        username=settings.db_user,
-        password=settings.db_password.get_secret_value(),
-        host=settings.db_host,
-        port=settings.db_port,
-        database=settings.db_name,
-    )
+@dataclass(frozen=True, slots=True)
+class Database:
+    """Write (primary) and read engines with their session factories (brief §3.8).
+
+    Repositories take `write_sessions` for changes and for reads that must see them,
+    and `read_sessions` for queries that tolerate replica lag.
+    """
+
+    write_engine: AsyncEngine
+    read_engine: AsyncEngine
+    write_sessions: async_sessionmaker[AsyncSession]
+    read_sessions: async_sessionmaker[AsyncSession]
+
+    async def dispose(self) -> None:
+        await self.write_engine.dispose()
+        if self.read_engine is not self.write_engine:
+            await self.read_engine.dispose()
+
+
+def _engine(settings: BackendSettings, host: str) -> AsyncEngine:
     return create_async_engine(
-        url,
+        postgres_url(settings, host=host),
         pool_size=settings.db_pool_size,
         pool_pre_ping=True,
-        connect_args={"timeout": settings.readiness_timeout_seconds},
+        connect_args={
+            "timeout": settings.db_connect_timeout_seconds,
+            "command_timeout": settings.db_command_timeout_seconds,
+        },
+    )
+
+
+def create_database(settings: BackendSettings) -> Database:
+    write = _engine(settings, settings.db_host)
+    read = _engine(settings, settings.db_read_host) if settings.db_read_host else write
+    return Database(
+        write_engine=write,
+        read_engine=read,
+        write_sessions=async_sessionmaker(write, expire_on_commit=False),
+        read_sessions=async_sessionmaker(read, expire_on_commit=False),
     )
 
 
@@ -33,6 +64,6 @@ def create_redis_client(settings: BackendSettings) -> Redis:
         port=settings.redis_port,
         username=settings.redis_user,
         password=settings.redis_password.get_secret_value(),
-        socket_timeout=settings.readiness_timeout_seconds,
-        socket_connect_timeout=settings.readiness_timeout_seconds,
+        socket_timeout=settings.redis_socket_timeout_seconds,
+        socket_connect_timeout=settings.redis_socket_timeout_seconds,
     )

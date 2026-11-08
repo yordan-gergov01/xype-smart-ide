@@ -71,4 +71,8 @@ _Avoid_: package (means a Python distribution here)
 
 **Readiness**: whether a service can reach every dependency it needs right now (`/readyz`); liveness (`/healthz`) only says the process runs.
 
+**Schema owner**: the database role that owns the schema; only the one-shot migrate service uses it.
+
+**Runtime role**: the database role the backend connects with; it reads and writes rows but cannot change the schema.
+
 **Edge proxy**: the only container with a published API port; it forwards to the backend, which has no route outside the stack.

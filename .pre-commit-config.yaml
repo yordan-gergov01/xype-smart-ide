@@ -104,6 +104,12 @@ repos:
         language: unsupported
         files: \.(ts|tsx|js|mjs|cjs)$|tsconfig.*\.json$
         pass_filenames: false
+      - id: buf
+        name: buf lint, format and build (proto)
+        entry: npm run --silent proto
+        language: unsupported
+        files: ^proto/
+        pass_filenames: false
       - id: jscpd
         name: duplication (jscpd)
         entry: npm run --silent dup

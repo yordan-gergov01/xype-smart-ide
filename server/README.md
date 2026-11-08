@@ -11,6 +11,7 @@ Backend (gateway), workers and the shared library, in the layout of XYPE's templ
 | `tests/integration/` | Real Postgres, Redis and RabbitMQ through testcontainers (Docker needed) |
 | `tests/support/` | Fakes and contract suites shared by unit and integration tests (importable as `support`) |
 | `tests/architecture/` | Runs the import-linter contracts from `pyproject.toml` |
+| `migrations/` | Alembic revisions generated from `common_lib.models` and reviewed by hand (ADR-0035) |
 | `requirements/` | `.in` files with direct dependencies, compiled `.txt` files with hashes (ADR-0007) |
 
 ## Local development setup
@@ -71,3 +72,18 @@ uv pip compile --universal --generate-hashes --python-version 3.12 requirements/
 run the checks, and commit the `.in` and `.txt` files together. CI recompiles and fails if the
 `.txt` files are out of date. If it reports drift without an `.in` change (new wheels for a
 pinned version change the hash list), recompile and commit the result.
+
+## Changing the database schema
+
+Change a model in `common_lib/models`, then generate a revision against an empty
+database (for example a throwaway `pgvector` container with `CREATE EXTENSION vector;
+CREATE SCHEMA migrations;`, or one that mounts `deploy/docker/postgres/initdb/`)
+and review it by hand before committing:
+
+```bash
+alembic revision --autogenerate -m "<short description>"
+```
+
+`alembic` reads `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD` (the schema
+owner role). `pytest -m integration` then checks that the migrations build exactly the
+models' schema. In compose, the `migrate` service applies them before the backend starts.
