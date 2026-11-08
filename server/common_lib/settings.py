@@ -7,7 +7,7 @@ environment variables; nothing else in the code reads `os.environ`.
 
 import sys
 
-from pydantic import ValidationError, field_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from common_lib.logging_config import LogFormat, LogLevel
@@ -39,6 +39,16 @@ class ServiceSettings(BaseSettings):
     @classmethod
     def _empty_is_none(cls, value: object) -> object:
         return None if value == "" else value
+
+
+class PostgresSettings(ServiceSettings):
+    """Connection to Postgres with one role (`DB_*`). Hosts have no default."""
+
+    db_host: str
+    db_port: int = Field(default=5432, ge=1, le=65535)
+    db_name: str
+    db_user: str
+    db_password: SecretStr
 
 
 def load_settings[SettingsT: ServiceSettings](settings_cls: type[SettingsT]) -> SettingsT:

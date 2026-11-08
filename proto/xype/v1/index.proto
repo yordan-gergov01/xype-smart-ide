@@ -1,0 +1,56 @@
+// XYPE IDE gRPC contract, package xype.v1 (buf v2, STANDARD lint, FILE breaking).
+// Indexing and Merkle-tree delta sync.
+//
+// Privacy: any field that carries code, file paths, queries or answers is an
+// EncryptedPayload. Plaintext fields carry only ids, hashes, sizes and enums.
+
+syntax = "proto3";
+
+package xype.v1;
+
+import "xype/v1/common.proto";
+
+// Server asks the client for its tree (10-min poll or after a mismatch).
+message MerkleSyncRequest {
+  string request_id = 1;
+  string repository_id = 2;
+  string server_root_hash = 3;
+  repeated string node_ids = 4; // obfuscated (HMAC) node ids to descend; empty = root
+}
+
+message MerkleTreeReport {
+  string request_id = 1;
+  string repository_id = 2;
+  string root_hash = 3;
+  repeated MerkleNode nodes = 4; // children of requested nodes
+}
+
+message MerkleNode {
+  string node_id = 1; // obfuscated (HMAC of path)
+  string hash = 2; // HMAC of the chunk (leaf) or hash over the children's HMACs
+  bool is_leaf = 3; // leaf = chunk
+  LineRange lines = 4; // for leaves
+}
+
+// Server tells the client which leaves changed and must be uploaded.
+message MerkleDelta {
+  string request_id = 1;
+  string repository_id = 2;
+  repeated ChunkRef upload = 3;
+  repeated string deleted_node_ids = 4;
+}
+
+// Client uploads changed chunks (initial index and deltas).
+message ChunkUpload {
+  string request_id = 1;
+  string repository_id = 2;
+  repeated ChunkContent chunks = 3;
+  string new_root_hash = 4;
+  bool is_initial = 5;
+}
+
+message IndexAck {
+  string request_id = 1;
+  repeated string indexed_chunk_ids = 2;
+  string server_root_hash = 3;
+}

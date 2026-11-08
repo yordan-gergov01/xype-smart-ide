@@ -30,6 +30,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
       POSTGRES_USER: ${POSTGRES_SUPERUSER:?POSTGRES_SUPERUSER must be set}
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD must be set}
+      POSTGRES_OWNER_USER: ${POSTGRES_OWNER_USER:?POSTGRES_OWNER_USER must be set}
+      POSTGRES_OWNER_PASSWORD: ${POSTGRES_OWNER_PASSWORD:?POSTGRES_OWNER_PASSWORD must be set}
       POSTGRES_APP_USER: ${POSTGRES_APP_USER:?POSTGRES_APP_USER must be set}
       POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD must be set}
     volumes:
@@ -106,6 +108,32 @@ services:
     # The broker raises a memory alarm at 60% of this limit; it uses ~160 MiB at rest.
     mem_limit: 384m
 
+  # One-shot: applies the Alembic migrations with the schema owner role, then exits.
+  # The backend starts only after it succeeded, and never holds DDL rights itself.
+  migrate:
+    <<: *hardening
+    image: xype-backend:dev
+    # Built by the backend service; never pulled from a registry.
+    pull_policy: never
+    user: "10001:10001"
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB:?POSTGRES_DB must be set}
+      DB_USER: ${POSTGRES_OWNER_USER:?POSTGRES_OWNER_USER must be set}
+      DB_PASSWORD: ${POSTGRES_OWNER_PASSWORD:?POSTGRES_OWNER_PASSWORD must be set}
+    networks:
+      - data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: "no"
+    mem_limit: 256m
+
   backend:
     <<: *hardening
     build:
@@ -145,6 +173,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       # The image has no curl: a failed request makes Python exit with 1.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]

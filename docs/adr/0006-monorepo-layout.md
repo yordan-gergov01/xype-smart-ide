@@ -62,7 +62,7 @@ Import contracts (import-linter, run by pre-commit, CI and `tests/architecture`)
 
 ### Drafts
 
-Phase 0 drafts live in `docs/drafts/` (`xype_v1.proto`, `schema.sql`). Phase 1 moves them to `proto/xype/v1/` and the first Alembic revision in `server/migrations/`, then deletes them (no duplicate sources of truth).
+The Phase 0 drafts (`xype_v1.proto`, `schema.sql`) moved to `proto/xype/v1/` (ADR-0013) and to `common_lib.models` with the first Alembic revision in `server/migrations/` (ADR-0035) in Phase 1 slice 5, and were deleted (no duplicate sources of truth).
 
 ### Consequences
 

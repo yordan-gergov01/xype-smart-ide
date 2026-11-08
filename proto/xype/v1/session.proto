@@ -1,0 +1,118 @@
+// XYPE IDE gRPC contract, package xype.v1 (buf v2, STANDARD lint, FILE breaking).
+// The one persistent bidirectional stream per IDE window and its control messages.
+//
+// Privacy: any field that carries code, file paths, queries or answers is an
+// EncryptedPayload. Plaintext fields carry only ids, hashes, sizes and enums.
+
+syntax = "proto3";
+
+package xype.v1;
+
+import "google/protobuf/timestamp.proto";
+import "xype/v1/agent.proto";
+import "xype/v1/chat.proto";
+import "xype/v1/common.proto";
+import "xype/v1/completion.proto";
+import "xype/v1/feedback.proto";
+import "xype/v1/index.proto";
+
+service SessionService {
+  // Persistent bidi stream. Client sends Hello first; server answers HelloAck.
+  // SessionRequest = client→server envelope, SessionResponse = server→client
+  // (names follow buf STANDARD RPC_REQUEST/RESPONSE_STANDARD_NAME).
+  rpc Session(stream SessionRequest) returns (stream SessionResponse);
+}
+
+message SessionRequest {
+  Envelope envelope = 1;
+  oneof body {
+    Hello hello = 10;
+    Heartbeat heartbeat = 11;
+    CompletionRequest completion_request = 20;
+    CancelRequest cancel = 21;
+    ChatQuery chat_query = 30;
+    AgentExecute agent_execute = 40;
+    ChunkResponse chunk_response = 50;
+    ToolResult tool_result = 60;
+    MerkleTreeReport merkle_tree_report = 70;
+    ChunkUpload chunk_upload = 71;
+    Feedback feedback = 80;
+  }
+}
+
+message SessionResponse {
+  Envelope envelope = 1;
+  oneof body {
+    HelloAck hello_ack = 10;
+    Heartbeat heartbeat = 11;
+    TokenRefreshRequired token_refresh_required = 12;
+    CompletionResponse completion_response = 20;
+    ChatDelta chat_delta = 30;
+    ChatDone chat_done = 31;
+    ChunkRequest chunk_request = 50;
+    ToolExecRequest tool_exec_request = 60;
+    TaskProgress task_progress = 61;
+    TaskCompleted task_completed = 62;
+    MerkleSyncRequest merkle_sync_request = 70;
+    MerkleDelta merkle_delta = 71;
+    IndexAck index_ack = 72;
+    StreamError error = 90;
+  }
+}
+
+message Hello {
+  string client_version = 1; // SemVer of xype-ai
+  string workspace_id = 2; // client-generated, stable per workspace
+  repeated string repository_ids = 3;
+  string session_key_id = 4; // key negotiated via REST /api/v1/auth/session-key
+  uint32 max_parallel_tools = 5;
+}
+
+message HelloAck {
+  string session_id = 1;
+  uint32 heartbeat_interval_s = 2;
+  uint32 rate_limit_per_minute = 3;
+  repeated string enabled_features = 4; // e.g. "chat", "agents", "web_disabled"
+}
+
+message Heartbeat {
+  uint64 seq = 1;
+}
+
+message TokenRefreshRequired {
+  google.protobuf.Timestamp expires_at = 1;
+}
+
+message CancelRequest {
+  string target_request_id = 1; // completion, chat or agent task id
+}
+
+message StreamError {
+  enum Code {
+    CODE_UNSPECIFIED = 0;
+    CODE_UNAUTHENTICATED = 1;
+    CODE_RATE_LIMITED = 2;
+    CODE_INVALID_REQUEST = 3;
+    CODE_BUDGET_EXCEEDED = 4;
+    CODE_MODEL_UNAVAILABLE = 5;
+    CODE_TIMEOUT = 6;
+    CODE_INTERNAL = 7;
+  }
+  Code code = 1;
+  string message = 2; // a fixed server-side string per code; never request content
+  uint32 retry_after_ms = 3;
+}
+
+// REST fallback shapes
+// REST (FastAPI, /api/v1) reuses these messages as JSON (proto3 JSON mapping):
+//   POST /api/v1/auth/token            {client_id, client_secret} → {access_token, refresh_token, expires_in}
+//   POST /api/v1/auth/refresh          {refresh_token} → same as above
+//   POST /api/v1/auth/session-key      {client_public_key} → {key_id, wrapped_key}  (ECDH, ADR-0015)
+//   POST /api/v1/codebases/{id}/upload ChunkUpload → IndexAck
+//   GET  /api/v1/codebases/{id}/merkle-tree → MerkleTreeReport (server view)
+//   POST /api/v1/complete/code         CompletionRequest → CompletionResponse
+//   POST /api/v1/chat/query            ChatQuery → 202 {request_id}; result via stream or GET
+//   POST /api/v1/agent/execute         AgentExecute (Idempotency-Key header) → 202 {task_id}
+//   GET  /api/v1/agent/tasks/{id}      → TaskProgress
+//   POST /api/v1/feedback              Feedback → 204
+//   GET  /healthz, /readyz, /metrics

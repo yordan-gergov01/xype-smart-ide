@@ -89,6 +89,20 @@ credentials are applied only when the volume is first created, so after changing
 `POSTGRES_*` value run `down -v`. The same holds for `GRAFANA_ADMIN_*`; to keep the
 models, remove only that volume: `docker volume rm xype_grafana_data`.
 
+## Database schema
+
+The one-shot `migrate` service applies the Alembic migrations with the schema owner
+role (`POSTGRES_OWNER_*`) and exits with code 0; the backend starts after it and
+connects with the runtime role (`POSTGRES_APP_*`), which cannot change the schema.
+
+A database volume created before the owner and runtime roles existed (before Phase 1
+slice 5) has no owner role, and `migrate` fails to log in. Recreate it once; this
+deletes the local database data only:
+
+```bash
+docker volume rm xype_postgres_data
+```
+
 ## Memory
 
 Measured on 2026-11-07 (Docker Desktop with 3.7 GiB, CPU only) with `docker stats

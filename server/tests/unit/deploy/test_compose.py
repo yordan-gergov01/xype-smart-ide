@@ -15,7 +15,7 @@ NETWORKS: dict[str, dict[str, Any]] = COMPOSE["networks"]
 ENV_EXAMPLE = (DEPLOY / "env" / ".env.example").read_text("utf-8")
 
 # Images without a shell or HTTP client, and one-shot jobs, cannot have a healthcheck.
-NO_HEALTHCHECK = {"otel-collector", "ollama-pull"}
+NO_HEALTHCHECK = {"otel-collector", "ollama-pull", "migrate"}
 # Images whose default user is already non-root (checked when the image was pinned).
 NON_ROOT_BY_IMAGE = {"otel-collector", "prometheus", "grafana"}
 # Writes the root-owned model volume once, then exits (ADR-0034).
@@ -27,7 +27,7 @@ OPEN_NETWORK_MEMBERS = {
     "edge": {"edge"},
 }
 # Stores, broker and models are reached only from inside the stack.
-NO_PORTS = {"postgres", "redis", "rabbitmq", "ollama", "backend"}
+NO_PORTS = {"postgres", "redis", "rabbitmq", "ollama", "backend", "migrate"}
 PINNED_IMAGE = re.compile(r"^[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}$")
 
 
@@ -47,6 +47,8 @@ def test_env_example_matches_compose_variables() -> None:
 @pytest.mark.parametrize("name", sorted(SERVICES))
 def test_service_is_hardened(name: str) -> None:
     service = SERVICES[name]
+    if service.get("image") == SERVICES["backend"]["image"]:
+        service = {**SERVICES["backend"], **service}  # runs the backend's built image
     if "build" in service:
         dockerfile = ROOT / "server" / service["build"]["dockerfile"]
         base = re.search(r"^ARG PYTHON_IMAGE=(\S+)$", dockerfile.read_text("utf-8"), re.MULTILINE)

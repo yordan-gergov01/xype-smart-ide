@@ -5,5 +5,4 @@
 *.yaml
 package-lock.json
 server/
-docs/drafts/
 fork/vscode/

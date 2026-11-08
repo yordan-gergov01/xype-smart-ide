@@ -16,10 +16,9 @@ from common_lib.errors import DependencyUnavailableError
 class DatabaseProbe:
     """Postgres answers `SELECT 1` through the connection pool."""
 
-    name = "database"
-
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, name: str = "database") -> None:
         self._engine = engine
+        self.name = name
 
     async def check(self) -> None:
         try:

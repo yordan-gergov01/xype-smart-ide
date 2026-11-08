@@ -17,9 +17,11 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test .claude/hooks/hooks.test.mjs",
     "dup": "jscpd",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run dup"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run dup && npm run proto",
+    "proto": "buf lint proto && buf format -d --exit-code proto"
   },
   "devDependencies": {
+    "@bufbuild/buf": "1.75.0",
     "@eslint/js": "10.0.1",
     "@types/node": "24.19.2",
     "eslint": "10.14.0",

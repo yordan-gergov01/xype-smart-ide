@@ -1,4 +1,4 @@
-# CI parity with local hooks. Later Phase 1 slices add proto, compose and integration jobs.
+# CI parity with local hooks. Later Phase 1 slices add compose and integration jobs.
 # Actions are pinned to commit SHAs (public repo, supply-chain safety).
 name: ci
 
@@ -65,12 +65,26 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run check
+      # Contract changes must not break clients built from master (buf FILE rules).
+      # Skipped until master has the proto module.
+      - name: buf breaking against master
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if git cat-file -e "origin/${BASE_REF}:proto/buf.yaml" 2>/dev/null; then
+            npx --no-install buf breaking proto --against ".git#ref=origin/${BASE_REF},subdir=proto"
+          else
+            echo "No proto module on ${BASE_REF} yet; nothing to compare."
+          fi
 
   secret-scan:
     runs-on: ubuntu-latest

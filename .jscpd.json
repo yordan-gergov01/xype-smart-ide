@@ -12,7 +12,6 @@
     "**/*_pb2*.py",
     "server/migrations/versions/**",
     "fork/vscode/**",
-    "docs/drafts/**",
     ".claude/skills/**"
   ],
   "reporters": ["console"],
