@@ -1,0 +1,41 @@
+// XYPE IDE gRPC contract, package xype.v1 (buf v2, STANDARD lint, FILE breaking).
+// Inline code completion: the synchronous path (brief §3.5).
+//
+// Privacy: any field that carries code, file paths, queries or answers is an
+// EncryptedPayload. Plaintext fields carry only ids, hashes, sizes and enums.
+
+syntax = "proto3";
+
+package xype.v1;
+
+import "xype/v1/common.proto";
+
+message CompletionRequest {
+  string request_id = 1;
+  string repository_id = 2;
+  string obfuscated_file_id = 3;
+  string language_id = 4; // e.g. "python", "typescriptreact"
+  // Encrypted CompletionContext (below), serialized then encrypted.
+  EncryptedPayload context = 5;
+  uint32 max_tokens = 6;
+  // HMAC-SHA256 under a team-scoped key (not a plain hash: short boilerplate could be
+  // reversed by dictionary); the boilerplate cache key (brief §3.8).
+  string snippet_hash = 7;
+}
+
+// Plaintext form, only ever inside EncryptedPayload.
+message CompletionContext {
+  string prefix = 1; // code before cursor (scrubbed)
+  string suffix = 2; // code after cursor (scrubbed)
+  repeated string related_snippets = 3; // call-graph dependents, open tabs
+  repeated string recent_commit_summaries = 4; // file git history
+  map<string, string> user_preferences = 5;
+}
+
+message CompletionResponse {
+  string request_id = 1;
+  EncryptedPayload completion = 2; // encrypted text to insert
+  ModelInfo model = 3;
+  Usage usage = 4;
+  uint32 server_latency_ms = 5;
+}

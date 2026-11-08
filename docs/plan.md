@@ -5,8 +5,8 @@ Status: Phase 0 draft (2026-11-07), awaiting review. Source of requirements: [`P
 Related Phase 0 outputs:
 - [ADR index](adr/README.md)
 - [Scale estimates](scale-estimates.md)
-- [gRPC / proto draft](drafts/xype_v1.proto)
-- [DB schema draft](drafts/schema.sql)
+- [gRPC contract](../proto/xype/v1/) (ADR-0013)
+- [DB schema](../server/common_lib/models/) and [migrations](../server/migrations/) (ADR-0035)
 - [Interfaces](interfaces.md)
 - [Open questions](questions.md)
 
@@ -62,14 +62,15 @@ Dependency notes:
 4. **Paid LLM access**: OpenRouter through one OpenAI-compatible adapter with ZDR, a provider allow-list and sticky sessions; direct DeepSeek is the same adapter with another base URL (ADR-0005, accepted). Config: `LLM_PRIMARY=openrouter:deepseek/deepseek-v4-pro` replaces the brief's `LLM_PRIMARY=deepseek`.
 5. **Task states**: `agent_tasks.status` and proto `TaskStatus` add `DEFERRED` (waiting for an off-peak window, `CostScheduler`) and `WAITING_FOR_CLIENT` (client offline or approval pending) to the brief's `QUEUED → STARTED → IN_PROGRESS → FINISHED / FAILED / CANCELLED`. Approved (Q15).
 6. **Currency**: all prices, costs and budgets in USD (DeepSeek bills in USD); `budget_usd_month` replaces the brief's `budget_eur_month` (Q14).
-7. **Drafts location**: proto and schema drafts live in `docs/drafts/` until Phase 1 moves them into `proto/xype/v1/` and Alembic, so `buf breaking` starts from a reviewed baseline.
+7. **Drafts location**: the proto and schema drafts lived in `docs/drafts/` until Phase 1 slice 5 moved them into `proto/xype/v1/` and Alembic, so `buf breaking` starts from a reviewed baseline.
 
 ## 3a. Phase 1 follow-ups found during slices 3–4
 
-- TLS with a local dev CA (brief §3.4) for the edge proxy, gRPC, asyncpg, Redis and AMQP, before the first `/api/v1` or gRPC payload route (Phase 2).
-- Split the Postgres role into a migration owner and a DML-only runtime role with the Alembic baseline (slice 5).
+- TLS with a local dev CA (brief §3.4) for the edge proxy, gRPC, asyncpg (write and read engines, migrations), Redis and AMQP, before the first `/api/v1` or gRPC payload route (Phase 2).
+- Docker secrets (`*_FILE` variables) for database, Redis and broker passwords instead of environment variables, before hosting.
+- Validate JSONB columns (`agent_tasks.parameters`, `events.payload_meta`) against typed models with allow-listed keys at the DAL boundary (with their first repositories).
 - Network guard in the test suite with ADR-0012 (slice 7), before adapters for paid or remote services exist.
-- Separate connect and command timeouts for Postgres and Redis from `READINESS_TIMEOUT_SECONDS` when storage and cache traffic arrive (slice 5).
+- Strip userinfo from `repositories.remote_url` at the registration API, with a test (Phase 2).
 
 ## 4. Risks
 

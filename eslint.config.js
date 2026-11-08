@@ -13,7 +13,7 @@ const limits = {
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules', '**/dist', '**/coverage', 'server', 'fork/vscode', 'docs/drafts'],
+    ignores: ['**/node_modules', '**/dist', '**/coverage', 'server', 'fork/vscode'],
   },
   {
     files: ['**/*.{ts,tsx}'],

@@ -1,0 +1,83 @@
+// XYPE IDE gRPC contract, package xype.v1 (buf v2, STANDARD lint, FILE breaking).
+// Background agent tasks and the tools the client executes for them.
+//
+// Privacy: any field that carries code, file paths, queries or answers is an
+// EncryptedPayload. Plaintext fields carry only ids, hashes, sizes and enums.
+
+syntax = "proto3";
+
+package xype.v1;
+
+import "google/protobuf/timestamp.proto";
+import "xype/v1/common.proto";
+
+message AgentExecute {
+  string request_id = 1;
+  string idempotency_key = 2; // required; dedupes resubmits
+  TaskType task_type = 3;
+  repeated string repository_ids = 4;
+  EncryptedPayload instruction = 5;
+  string jira_issue_key = 6; // optional, e.g. "XYPE-123"
+  bool run_now = 7; // overrides CostScheduler deferral
+}
+
+message ToolExecRequest {
+  string request_id = 1; // tool call id
+  string task_id = 2;
+  enum Tool {
+    TOOL_UNSPECIFIED = 0;
+    TOOL_READ_FILE = 1;
+    TOOL_SEARCH = 2;
+    TOOL_PROPOSE_EDIT = 3; // multi-file diff, accept/reject in UI
+    TOOL_RUN_TESTS = 4;
+    TOOL_RUN_COMMAND = 5;
+    TOOL_LIST_FILES = 6;
+  }
+  Tool tool = 3;
+  EncryptedPayload arguments = 4; // JSON args, encrypted
+  bool requires_approval = 5; // server hint; client rules are authoritative
+  uint32 timeout_ms = 6;
+}
+
+message ToolResult {
+  string request_id = 1;
+  string task_id = 2;
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_OK = 1;
+    STATUS_ERROR = 2;
+    STATUS_DENIED_BY_USER = 3;
+    STATUS_TIMEOUT = 4;
+  }
+  Status status = 3;
+  EncryptedPayload output = 4; // scrubbed output, encrypted
+}
+
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_QUEUED = 1;
+  TASK_STATUS_STARTED = 2;
+  TASK_STATUS_IN_PROGRESS = 3;
+  TASK_STATUS_FINISHED = 4;
+  TASK_STATUS_FAILED = 5;
+  TASK_STATUS_CANCELLED = 6;
+  TASK_STATUS_DEFERRED = 7; // waiting for off-peak window
+  TASK_STATUS_WAITING_FOR_CLIENT = 8; // client offline or approval pending
+}
+
+message TaskProgress {
+  string task_id = 1;
+  TaskStatus status = 2;
+  uint32 step = 3;
+  uint32 total_steps_estimate = 4;
+  string step_label = 5; // from a fixed server-side set ("running tests"); never code or paths
+  google.protobuf.Timestamp scheduled_for = 6; // set when DEFERRED
+}
+
+message TaskCompleted {
+  string task_id = 1;
+  TaskStatus status = 2; // FINISHED, FAILED or CANCELLED
+  EncryptedPayload summary = 3;
+  ModelInfo model = 4;
+  Usage usage = 5;
+}

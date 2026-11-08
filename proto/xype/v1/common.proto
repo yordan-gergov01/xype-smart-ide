@@ -1,0 +1,78 @@
+// XYPE IDE gRPC contract, package xype.v1 (buf v2, STANDARD lint, FILE breaking).
+// Shared types: correlation envelope, encrypted payloads, obfuscated chunk references, model and usage reports.
+//
+// Privacy: any field that carries code, file paths, queries or answers is an
+// EncryptedPayload. Plaintext fields carry only ids, hashes, sizes and enums.
+
+syntax = "proto3";
+
+package xype.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Correlation for every message, propagated to logs/traces/RabbitMQ headers.
+message Envelope {
+  string message_id = 1; // UUIDv7, unique per message
+  string correlation_id = 2; // request_id this message answers or belongs to
+  string trace_parent = 3; // W3C traceparent
+  google.protobuf.Timestamp sent_at = 4;
+}
+
+// AES-256-GCM ciphertext produced on the client with a per-session key.
+// The server decrypts only in memory (brief §3.7).
+message EncryptedPayload {
+  string key_id = 1; // session key id; rotation-aware
+  // 12 random bytes, unique per encryption under the key (several payloads in one message
+  // each get their own); keys rotate well before 2^32 encryptions. The server rejects a
+  // repeated (key_id, nonce) within a session.
+  bytes nonce = 2;
+  bytes ciphertext = 3; // includes the 16-byte GCM tag
+  // Authenticated, unencrypted bytes binding the payload to its place: message_id,
+  // request id, field number and key_id (ADR-0013). Checked by the receiver.
+  bytes aad = 4;
+}
+
+// Obfuscated reference to a code region. No file names or symbols in clear.
+message ChunkRef {
+  string repository_id = 1; // server-side UUID of a registered repo
+  string obfuscated_file_id = 2; // HMAC-SHA256(repo_key, normalized_path), hex
+  LineRange lines = 3;
+  string chunk_hash = 4; // HMAC of chunk content; Merkle leaf
+}
+
+message LineRange {
+  uint32 start = 1; // 1-based, inclusive
+  uint32 end = 2; // inclusive
+}
+
+message ChunkContent {
+  ChunkRef ref = 1;
+  EncryptedPayload content = 2; // scrubbed code
+}
+
+enum TaskType {
+  TASK_TYPE_UNSPECIFIED = 0;
+  TASK_TYPE_COMPLETION = 1;
+  TASK_TYPE_CHAT = 2;
+  TASK_TYPE_REFACTOR = 3;
+  TASK_TYPE_TESTS = 4;
+  TASK_TYPE_DOCS = 5;
+  TASK_TYPE_LINT = 6;
+  TASK_TYPE_IMPLEMENT_TICKET = 7;
+}
+
+// Which model actually answered; shown in the UI (brief §6 cost indicators).
+message ModelInfo {
+  string model_id = 1;
+  string model_version = 2;
+  bool is_backup = 3; // true when race-to-response or fallback served it
+  string reason = 4; // e.g. "primary_timeout", "budget_degrade"
+}
+
+message Usage {
+  uint32 input_tokens = 1;
+  uint32 input_cached_tokens = 2;
+  uint32 output_tokens = 3;
+  int64 cost_micro_usd = 4; // USD; 0 for local and mock models
+  bool cache_hit = 5; // served from our own cache (no model call)
+}

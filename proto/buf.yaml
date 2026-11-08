@@ -1,0 +1,10 @@
+# buf v2 configuration for the gRPC contract (ADR-0013).
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

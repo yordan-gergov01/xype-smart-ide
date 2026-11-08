@@ -1,0 +1,22 @@
+// XYPE IDE gRPC contract, package xype.v1 (buf v2, STANDARD lint, FILE breaking).
+// Ratings and annotations on answers.
+//
+// Privacy: any field that carries code, file paths, queries or answers is an
+// EncryptedPayload. Plaintext fields carry only ids, hashes, sizes and enums.
+
+syntax = "proto3";
+
+package xype.v1;
+
+import "xype/v1/common.proto";
+
+message Feedback {
+  string target_message_id = 1; // chat message or completion request id
+  enum Rating {
+    RATING_UNSPECIFIED = 0;
+    RATING_UP = 1;
+    RATING_DOWN = 2;
+  }
+  Rating rating = 2;
+  EncryptedPayload annotation = 3;
+}

@@ -1,0 +1,67 @@
+// XYPE IDE gRPC contract, package xype.v1 (buf v2, STANDARD lint, FILE breaking).
+// Chat over selected files or the whole codebase, and the server's request for exact chunk content.
+//
+// Privacy: any field that carries code, file paths, queries or answers is an
+// EncryptedPayload. Plaintext fields carry only ids, hashes, sizes and enums.
+
+syntax = "proto3";
+
+package xype.v1;
+
+import "xype/v1/common.proto";
+
+message ChatQuery {
+  string request_id = 1;
+  string chat_session_id = 2; // empty → new session
+  oneof scope {
+    FileScope files = 3;
+    FullCodebaseScope full_codebase = 4;
+    WebScope web = 5; // interface only; disabled in v1
+  }
+  EncryptedPayload query = 6; // encrypted user question (scrubbed)
+  string preferred_model_id = 7;
+  bool want_alternatives = 8; // multi-model answers for ambiguous requests
+  string idempotency_key = 9; // required; chat is queued (brief §2 reliability)
+}
+
+message FileScope {
+  repeated ChunkRef chunks = 1; // selected files/regions
+}
+
+message FullCodebaseScope {
+  repeated string repository_ids = 1;
+  bool include_templates = 2; // templates are always eligible (brief §4.1)
+}
+
+message WebScope {}
+
+message ChatDelta {
+  string request_id = 1;
+  uint32 seq = 2; // strict order of deltas
+  EncryptedPayload text = 3;
+  uint32 alternative_index = 4; // 0 = main answer
+}
+
+message ChatDone {
+  string request_id = 1;
+  string chat_session_id = 2;
+  string message_id = 3; // persisted chat_messages row
+  ModelInfo model = 4;
+  Usage usage = 5;
+  repeated ChunkRef citations = 6;
+  repeated string anomaly_flags = 7;
+}
+
+// Server asks for exact chunk content after vector search (brief §3.5).
+message ChunkRequest {
+  string request_id = 1; // id of the fetch; answers reuse it
+  string purpose_request_id = 2; // chat/agent request this fetch serves
+  repeated ChunkRef chunks = 3;
+  uint32 max_bytes = 4; // minimized transfer
+}
+
+message ChunkResponse {
+  string request_id = 1;
+  repeated ChunkContent chunks = 2;
+  repeated ChunkRef missing = 3; // stale or deleted on the client
+}
