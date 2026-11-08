@@ -1,0 +1,21 @@
+{
+  "threshold": 1,
+  "minLines": 8,
+  "minTokens": 60,
+  "format": ["python", "typescript", "tsx", "javascript"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/.venv/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/gen/**",
+    "**/*_pb2*.py",
+    "server/migrations/versions/**",
+    "fork/vscode/**",
+    "docs/drafts/**",
+    ".claude/skills/**"
+  ],
+  "reporters": ["console"],
+  "absolute": false,
+  "gitignore": true
+}

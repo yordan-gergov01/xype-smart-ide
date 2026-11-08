@@ -13,14 +13,20 @@ Written in Phase 0:
 | [0003](0003-fim-completion-model.md) | Local FIM completion model: qwen2.5-coder 1.5B on Ollama | Proposed | §1, §5 |
 | [0004](0004-rabbitmq-quorum-queues.md) | RabbitMQ 4.4 quorum queues with native priorities and delayed delivery | Accepted (deviation, approved) | §3.9 |
 | [0005](0005-paid-llm-openrouter.md) | Paid LLM access through OpenRouter (OpenAI-compatible adapter) | Accepted | §1, §5 |
-| [0006](0006-monorepo-layout.md) | Monorepo layout and Phase 0 drafts location | Proposed | §8 |
+| [0006](0006-monorepo-layout.md) | Repository layout: XYPE templates for server and web clients | Accepted (deviation, approved) | §8 |
+
+Written in Phase 1:
+
+| # | Title | Status | Brief |
+|---|---|---|---|
+| [0007](0007-python-dependencies.md) | Python dependencies: pip with compiled, hashed requirements files | Accepted | §1, §8 |
+| [0008](0008-npm-typescript-tooling.md) | TypeScript tooling: npm workspaces, TypeScript 6.0, ESLint import rules | Accepted | §1, §8 |
+| [0034](0034-local-stack-compose.md) | Local stack: compose networks, least privilege and memory limits | Proposed | §1, §2, §8 |
 
 Planned (written in the phase that makes the decision):
 
 | # | Title | Phase |
 |---|---|---|
-| 0007 | Python workspace: uv workspace, one package per module, import-linter contracts | 1 |
-| 0008 | TypeScript workspace: pnpm workspaces, ESLint boundaries | 1 |
 | 0009 | No DI framework: constructor injection in composition roots | 1 |
 | 0010 | Configuration via pydantic-settings, environment only | 1 |
 | 0011 | Observability stack: structlog JSON, OpenTelemetry, Prometheus, Grafana; body-stripping policy | 1 |

@@ -112,7 +112,7 @@ CREATE TABLE session (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     project_id      UUID REFERENCES projects(id),
-    session_metadata_enc BYTEA,                          -- encrypted name/description 
+    session_metadata_enc BYTEA,                          -- encrypted name/description
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

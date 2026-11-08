@@ -1,0 +1,261 @@
+# Local stack for XYPE IDE (runbook: docs/runbooks/local-dev.md, decisions: ADR-0034).
+#
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env up -d
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env --profile observability up -d
+#
+# Images are pinned by tag and digest. Every service runs as a non-root user (except the
+# one-shot model download), with no capabilities, a read-only root filesystem, a memory
+# limit and a healthcheck (the OTel collector image has no shell, so it has none).
+# tests/unit/deploy/test_compose.py checks these rules. Application services join in
+# Phase 1 slice 4.
+name: xype
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+
+# One pin for both Ollama services, so an update cannot change only one of them.
+x-ollama-image: &ollama-image ollama/ollama:0.40.14@sha256:ebaef4f4c5d93660e1f25f8ad085a112f51ccfb0e8458073e71793959dba91c9
+
+services:
+  postgres:
+    <<: *hardening
+    image: pgvector/pgvector:0.8.7-pg16-trixie@sha256:9cf8b511f0e9a2c209b61430fc139f1ab9c75edbb31fb1751db6617b246a897a
+    user: "999:999" # postgres; the named volume is seeded with its ownership
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=100"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:?POSTGRES_SUPERUSER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD must be set}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:?POSTGRES_APP_USER must be set}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD must be set}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    tmpfs:
+      - /var/run/postgresql:uid=999,gid=999
+      - /tmp:uid=999,gid=999
+    networks:
+      - data
+    healthcheck:
+      # TCP, not the socket: during first-start initialisation the temporary server
+      # listens on the socket only and must not count as ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    mem_limit: 384m
+
+  redis:
+    <<: *hardening
+    image: redis:8.8.4-alpine@sha256:c027ae0f677dcf73d74038256f5b88c9ba7b11ccbfae97e96a9f091208d36125
+    user: "999:1000" # redis
+    # Renders the config (password, no persistence, 64 MB LRU) into a tmpfs, so the
+    # password is never on a command line.
+    entrypoint: ["sh", "/opt/xype/entrypoint.sh"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      # Read by redis-cli in the healthcheck, so the password is not on its command line.
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+    volumes:
+      - ./docker/redis/entrypoint.sh:/opt/xype/entrypoint.sh:ro
+    tmpfs:
+      - /data:uid=999,gid=1000,mode=0700
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 128m
+
+  rabbitmq:
+    <<: *hardening
+    image: rabbitmq:4.4.0-management-alpine@sha256:4841f6384ef8313c3594cd3f2e9f40c10805f8a61c45f08a9a5d9ddea8199267
+    # RabbitMQ stores data per node name (rabbit@<hostname>); a fixed hostname keeps
+    # queues across container re-creation.
+    hostname: rabbitmq
+    user: "100:101" # rabbitmq; the named volume is seeded with its ownership
+    entrypoint: ["sh", "/opt/xype/entrypoint.sh"]
+    command: ["rabbitmq-server"]
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./docker/rabbitmq/entrypoint.sh:/opt/xype/entrypoint.sh:ro
+      - ./docker/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./docker/rabbitmq/conf.d/20-xype.conf:/etc/rabbitmq/conf.d/20-xype.conf:ro
+    networks:
+      - messaging
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+    # The broker raises a memory alarm at 60% of this limit; it uses ~160 MiB at rest.
+    mem_limit: 384m
+
+  ollama:
+    <<: *hardening
+    image: *ollama-image
+    # Serves the models read-only, without internet and without root: blobs are
+    # world-readable, and the server's key lives in its tmpfs home.
+    user: "10001:10001"
+    environment:
+      HOME: /tmp
+      OLLAMA_MODELS: /ollama/models
+      OLLAMA_NOPRUNE: "1"
+      # Ollama's cloud models are paid remote inference; never allowed.
+      OLLAMA_NO_CLOUD: "1"
+      # One runtime serves the FIM and the embedding model (ADR-0002, ADR-0003).
+      OLLAMA_MAX_LOADED_MODELS: "2"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-4096}
+    volumes:
+      - ollama_data:/ollama:ro
+    tmpfs:
+      - /tmp:uid=10001,gid=10001
+    networks:
+      - models
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    mem_limit: 2304m
+
+  # One-shot: runs its own Ollama server with internet access to download the models
+  # into the volume, then exits. The only service on the egress network. Root, because
+  # the volume is root-owned; no capabilities.
+  ollama-pull:
+    <<: *hardening
+    image: *ollama-image
+    entrypoint: ["sh", "/opt/xype/pull-models.sh"]
+    environment:
+      HOME: /root
+      OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_MODELS: /ollama/models
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_PULL_MODELS: ${OLLAMA_PULL_MODELS:?OLLAMA_PULL_MODELS must be set}
+      OLLAMA_REFRESH: ${OLLAMA_REFRESH:-0}
+    volumes:
+      - ollama_data:/ollama
+      - ./docker/ollama/pull-models.sh:/opt/xype/pull-models.sh:ro
+    tmpfs:
+      - /root
+      - /tmp
+    networks:
+      - egress
+    healthcheck:
+      disable: true
+    restart: "no"
+    mem_limit: 512m
+
+  otel-collector:
+    <<: *hardening
+    profiles: [observability]
+    image: otel/opentelemetry-collector:0.165.0@sha256:34b24b740c3c88d3467740e8642a397c13898ef76d7295c5425164c482ed1b73
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel/collector.yaml:/etc/otelcol/config.yaml:ro
+    networks:
+      - telemetry
+    # The image has no shell or HTTP client, so no healthcheck; Prometheus scrapes its
+    # own metrics and shows it as down when it is.
+    healthcheck:
+      disable: true
+    mem_limit: 128m
+
+  prometheus:
+    <<: *hardening
+    profiles: [observability]
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - telemetry
+      - ui
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    mem_limit: 256m
+
+  grafana:
+    <<: *hardening
+    profiles: [observability]
+    image: grafana/grafana:13.2.5@sha256:9f7aa1e1e3246aade5792d35a738049f7f32f89cd51d1956cf426a4e86268a84
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER must be set}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_ANALYTICS_FEEDBACK_LINKS_ENABLED: "false"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    tmpfs:
+      - /tmp
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    networks:
+      - ui
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+    # Grafana 13 thrashes at 256 MiB during its first start (measured).
+    mem_limit: 512m
+
+networks:
+  # Internal networks have no route to the internet or the host.
+  data:
+    internal: true
+  messaging:
+    internal: true
+  models:
+    internal: true
+  # Telemetry from the services to the collector and Prometheus scrapes.
+  telemetry:
+    internal: true
+  # Outbound access for the one-shot model download only.
+  egress: {}
+  # Prometheus and Grafana publish their ports on 127.0.0.1; nothing else joins it.
+  ui: {}
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  ollama_data:
+  prometheus_data:
+  grafana_data:

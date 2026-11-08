@@ -1,0 +1,57 @@
+# Secrets — never commit (only *.example files are allowed)
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+secrets/
+*.pem
+*.key
+*.p12
+deploy/certs/
+
+# Claude Code personal settings
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+coverage/
+*.tsbuildinfo
+out/
+.vite/
+
+# Generated code (protobuf stubs are generated in CI and locally)
+gen/
+**/*_pb2.py
+**/*_pb2.pyi
+**/*_pb2_grpc.py
+
+# Models, weights, large data
+*.gguf
+*.safetensors
+models/
+finetune/data/
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db

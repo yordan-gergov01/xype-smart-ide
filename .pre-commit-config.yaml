@@ -1,0 +1,112 @@
+# Install once: pre-commit install --hook-type pre-commit --hook-type commit-msg
+# Run all: pre-commit run --all-files
+# CI runs the same checks (.github/workflows/ci.yml).
+minimum_pre_commit_version: "4.4.0" # language: unsupported
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: detect-private-key
+      - id: no-commit-to-branch
+        args: ["--branch", "master"]
+
+  # Secret scanning (public repo). Docker variant: no Go toolchain needed locally.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks-docker
+
+  # Python lint and format for server/; ruff finds server/pyproject.toml itself.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: c0f278f1254ccc8fb09676bcdb8d847e7db493e5 # v0.17.4, keep in step with server/requirements/dev.txt
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        files: ^server/
+      - id: ruff-format
+        files: ^server/
+
+  # Python hooks use pre-commit's own interpreter (language: python), so they work wherever
+  # pre-commit runs (needs Python >= 3.11 for tomllib); no extra dependencies.
+  - repo: local
+    hooks:
+      - id: size-limits
+        name: source size limits (500 lines/file, 50 lines/function)
+        entry: python tools/check_size.py
+        language: python
+        types: [text]
+      - id: paid-api-guard
+        name: no paid LLM API endpoints outside allowed files
+        entry: python tools/check_paid_api.py
+        language: python
+        types: [text]
+      - id: commit-msg
+        name: conventional commit message
+        entry: python tools/check_commit_msg.py
+        language: python
+        stages: [commit-msg]
+      - id: repo-check-tests
+        name: repo check script tests
+        entry: python -m unittest tools/test_repo_checks.py
+        language: python
+        files: ^tools/
+        pass_filenames: false
+      - id: claude-hook-tests
+        name: claude hook tests
+        entry: node --test .claude/hooks/hooks.test.mjs
+        language: unsupported
+        files: ^(\.claude/hooks/|tools/size_limits\.toml)
+        pass_filenames: false
+
+  # These need the project's dependencies, which isolated hook environments do not have:
+  # mypy and import-linter run from server/.venv, ESLint and Prettier from node_modules.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (server, strict)
+        entry: python tools/server_tool.py mypy
+        language: unsupported
+        files: ^server/(.*\.py|pyproject\.toml)$
+        pass_filenames: false
+      - id: import-linter
+        name: import-linter (server)
+        entry: python tools/server_tool.py lint-imports
+        language: unsupported
+        files: ^server/(.*\.py|pyproject\.toml)$
+        pass_filenames: false
+      - id: eslint
+        name: eslint
+        entry: npx --no-install eslint --max-warnings=0
+        language: unsupported
+        files: \.(ts|tsx|js|mjs|cjs)$
+      - id: prettier
+        name: prettier
+        entry: npx --no-install prettier --check --ignore-unknown
+        language: unsupported
+        types_or: [ts, tsx, javascript, json, css]
+      - id: typecheck
+        name: tsc
+        entry: npm run --silent typecheck
+        language: unsupported
+        files: \.(ts|tsx|js|mjs|cjs)$|tsconfig.*\.json$
+        pass_filenames: false
+      - id: jscpd
+        name: duplication (jscpd)
+        entry: npm run --silent dup
+        language: unsupported
+        types_or: [python, ts, tsx, javascript]
+        pass_filenames: false

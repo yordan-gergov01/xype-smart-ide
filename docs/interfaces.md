@@ -1,12 +1,31 @@
 # Core interfaces (Phase 0 draft)
 
-Every external dependency sits behind one of these. Each has a real adapter, an in-memory fake and a shared contract test suite (brief §2). The core imports only these Protocols; adapters are wired in the composition roots in `server/apps/`.
+Every external dependency sits behind one of these. Each has a real adapter, an in-memory fake and a shared contract test suite (brief §2). Services import only these Protocols; adapters are wired in the composition roots (`server/backend/main.py` with `backend/api/dependencies/services.py`, `server/llm/main.py`, `server/indexer/main.py`). Layout: ADR-0006.
 
 Conventions:
 - Async everywhere on I/O. Pure computation stays sync.
-- Domain types are frozen `dataclass(slots=True)` in the owning module's `types.py`.
+- Domain types are frozen `dataclass(slots=True)`. Shared ones live in `server/common_lib/domain.py`; feature-specific ones next to their Protocol.
 - Errors are typed per module (`LLMTimeoutError`, `BudgetExceededError`, …), all subclasses of `XypeError`.
 - `SecretBytes` is a small wrapper that zeroes its buffer on `wipe()` and never prints its contents (`__repr__` returns `<SecretBytes len=N>`).
+
+## Where each interface lives (ADR-0006)
+
+| Section | Protocol(s) | Location |
+|---|---|---|
+| Shared types | `RequestContext`, `ChunkRef`, `ModelRef`, `XypeError` | `server/common_lib/domain.py`, `common_lib/errors.py` (implemented) |
+| Shared types | `SecretBytes` | `server/common_lib` (with the first user, Phase 2) |
+| llm | `LLMProvider` + resilience wrappers | `server/llm/providers/` (worker); the backend reaches it through RabbitMQ and a small `services` Protocol |
+| embeddings | `Embedder` | Protocol in `common_lib`; adapters chosen in slice 6 (used by `indexer` and by retrieval in `backend`) |
+| retrieval | `VectorStore`, `ChunkRepository` | `backend/services/retrieval/` (Protocols), `backend/dal/retrieval/` (pgvector) |
+| indexing | `MerkleIndex` | `server/indexer/` + `backend/dal/indexing/` |
+| cache | `Cache`, `SemanticCache` | `backend/services/cache/` (Protocol, key builders), `backend/dal/cache/` (Redis) |
+| tasks | `TaskQueue`, `TaskHandler`, `Clock`, `CostScheduler` | `backend/services/tasks/` (Protocol), `backend/messaging/` (RabbitMQ) |
+| router | `ModelRouter` | `backend/services/router/` |
+| prompts | `PromptRegistry` | `backend/services/prompts/`; templates as files in `server/prompts/` |
+| security | `CryptoBox`, `SecretScrubber`, `hmac_id` | `backend/services/security/`; client side in `clients/xype-ai` |
+| connectors | `ConnectorClient` | `backend/services/connectors/` (Protocols), adapters wired in `backend/main.py` |
+| observability | `Metrics` | `common_lib` (used by every service) |
+| agents | agent loop, `ClientToolPort` | `backend/services/agents/`; `ToolExecutor` in `clients/xype-ai` |
 
 ## Shared domain types (sketch)
 

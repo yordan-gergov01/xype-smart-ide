@@ -1,0 +1,115 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xype-server"
+version = "0.0.0"
+description = "XYPE IDE server: backend API, workers and the shared library."
+requires-python = ">=3.12,<3.13"
+# Dependencies are pinned per service in requirements/*.txt, not declared here (ADR-0007).
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["common_lib*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["."]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # import sorting
+    "N",     # naming
+    "UP",    # modern syntax for the target version
+    "B",     # likely bugs
+    "A",     # shadowing builtins and stdlib modules
+    "S",     # security
+    "ASYNC", # blocking calls in async code
+    "BLE",   # blind except
+    "C4",    # comprehensions
+    "C90",   # cyclomatic complexity
+    "SIM",   # simplifications
+    "RET",   # return statements
+    "PTH",   # pathlib over os.path
+    "PT",    # pytest style
+    "T20",   # stray print calls
+    "TC",    # imports only needed for typing
+    "PL",    # pylint subset
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "PLR2004", # small literal constants read better inline
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 7
+max-statements = 40
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101", # assert is how pytest checks results
+    "S105", # tests use deliberately fake secrets
+    "S106",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["common_lib"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+files = ["common_lib", "tests"]
+# Test folders have no __init__.py; name modules by their path so equally named
+# test files in different folders do not clash.
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--import-mode=importlib",
+    "-m",
+    "not integration and not e2e",
+]
+xfail_strict = true
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: needs real infrastructure (testcontainers)",
+    "e2e: end to end across the extension and the server",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["common_lib"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+
+# Contracts are added once the modules they name exist; a contract naming a
+# missing module fails.
+[tool.importlinter]
+root_packages = ["common_lib"]
+# Needed so contracts can forbid third-party packages.
+include_external_packages = true
+
+# Everything every service imports stays free of transport, broker, cache and HTTP
+# client code. common_lib.models (SQLAlchemy) joins later and is the only ORM user.
+[[tool.importlinter.contracts]]
+name = "The shared library imports no transport, broker, cache or HTTP code"
+type = "forbidden"
+source_modules = ["common_lib"]
+forbidden_modules = ["fastapi", "starlette", "grpc", "aio_pika", "redis", "httpx"]
