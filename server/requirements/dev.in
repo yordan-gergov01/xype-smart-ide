@@ -11,3 +11,6 @@ pytest-asyncio
 pytest-cov
 import-linter
 pre-commit
+# Reads deploy/docker-compose.yml in the compose drift and hardening tests.
+pyyaml
+types-pyyaml

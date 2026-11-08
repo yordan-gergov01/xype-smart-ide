@@ -1,0 +1,97 @@
+"""Keep deploy/docker-compose.yml, deploy/env/.env.example and the hardening rules in step."""
+
+import re
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+
+DEPLOY = Path(__file__).resolve().parents[4] / "deploy"
+COMPOSE: dict[str, Any] = yaml.safe_load((DEPLOY / "docker-compose.yml").read_text("utf-8"))
+SERVICES: dict[str, dict[str, Any]] = COMPOSE["services"]
+NETWORKS: dict[str, dict[str, Any]] = COMPOSE["networks"]
+ENV_EXAMPLE = (DEPLOY / "env" / ".env.example").read_text("utf-8")
+
+# Images without a shell or HTTP client, and one-shot jobs, cannot have a healthcheck.
+NO_HEALTHCHECK = {"otel-collector", "ollama-pull"}
+# Images whose default user is already non-root (checked when the image was pinned).
+NON_ROOT_BY_IMAGE = {"otel-collector", "prometheus", "grafana"}
+# Writes the root-owned model volume once, then exits (ADR-0034).
+ROOT_ALLOWED = {"ollama-pull"}
+# The only services allowed on networks with a route outside the stack.
+OPEN_NETWORK_MEMBERS = {"egress": {"ollama-pull"}, "ui": {"prometheus", "grafana"}}
+# Stores, broker and models are reached only from inside the stack.
+NO_PORTS = {"postgres", "redis", "rabbitmq", "ollama"}
+PINNED_IMAGE = re.compile(r"^[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}$")
+
+
+def compose_variables() -> set[str]:
+    text = (DEPLOY / "docker-compose.yml").read_text("utf-8")
+    return set(re.findall(r"(?<!\$)\$\{([A-Z0-9_]+)", text))
+
+
+def example_variables() -> set[str]:
+    return set(re.findall(r"^([A-Z0-9_]+)=", ENV_EXAMPLE, re.MULTILINE))
+
+
+def test_env_example_matches_compose_variables() -> None:
+    assert compose_variables() == example_variables()
+
+
+@pytest.mark.parametrize("name", sorted(SERVICES))
+def test_service_is_hardened(name: str) -> None:
+    service = SERVICES[name]
+    assert PINNED_IMAGE.match(service["image"]), "image must be pinned by tag and digest"
+    assert service["read_only"] is True
+    assert service["cap_drop"] == ["ALL"]
+    assert "cap_add" not in service
+    assert "no-new-privileges:true" in service["security_opt"]
+    assert service["mem_limit"]
+    if name not in NO_HEALTHCHECK:
+        assert "test" in service["healthcheck"]
+
+
+@pytest.mark.parametrize("name", sorted(SERVICES))
+def test_service_runs_as_non_root(name: str) -> None:
+    if name in ROOT_ALLOWED or name in NON_ROOT_BY_IMAGE:
+        assert "user" not in SERVICES[name]
+        return
+    user = str(SERVICES[name]["user"])
+    assert not user.startswith(("0", "root")), user
+
+
+@pytest.mark.parametrize("name", sorted(SERVICES))
+def test_published_ports_bind_to_loopback_only(name: str) -> None:
+    ports = SERVICES[name].get("ports", [])
+    if name in NO_PORTS:
+        assert ports == []
+    for port in ports:
+        assert str(port).startswith("127.0.0.1:"), port
+
+
+@pytest.mark.parametrize("name", sorted(SERVICES))
+def test_only_allowed_services_join_networks_with_outside_access(name: str) -> None:
+    for network in SERVICES[name]["networks"]:
+        if not NETWORKS[network].get("internal"):
+            assert name in OPEN_NETWORK_MEMBERS.get(network, set()), (name, network)
+
+
+def test_ollama_never_uses_cloud_models() -> None:
+    for name in ("ollama", "ollama-pull"):
+        assert SERVICES[name]["environment"]["OLLAMA_NO_CLOUD"] == "1"
+    assert "cloud" not in ENV_EXAMPLE.split("OLLAMA_PULL_MODELS=")[1].splitlines()[0]
+
+
+def test_collector_debug_exporter_logs_no_span_contents() -> None:
+    collector = yaml.safe_load((DEPLOY / "otel" / "collector.yaml").read_text("utf-8"))
+    assert collector["exporters"]["debug"]["verbosity"] == "basic"
+
+
+def test_default_memory_budget_leaves_room_for_the_server() -> None:
+    # One-shot jobs are left out: the model download finishes before ollama starts.
+    units = {"m": 1, "g": 1024}
+    default = [s for s in SERVICES.values() if "profiles" not in s and s.get("restart") != "no"]
+    total = sum(int(s["mem_limit"][:-1]) * units[s["mem_limit"][-1]] for s in default)
+    # 4 GiB in total, of which about 600 MiB are kept for the server's own services.
+    assert total <= 4096 - 600, f"{total} MiB"

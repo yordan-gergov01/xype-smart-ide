@@ -23,7 +23,7 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3 (plus th
 | T17 | Orchestrator: templates, guardrails, retrieval, routing, post-processing, fallbacks (3.4.4) | planned (3–5) | — | — |
 | T18 | Intelligent router by task, prefs, budget, peak/off-peak (3.4.4, 5) | planned (3–5) | — | — |
 | T19 | Stateless embedding, plaintext dropped after embedding (3.4.7) | planned (2) | ADR-0002 | — |
-| T20 | Postgres + pgvector HNSW behind `VectorStore` (3.4.6, 3.2) | planned (1–2) | ADR-0020 (planned) | draft: `docs/drafts/schema.sql` |
+| T20 | Postgres + pgvector HNSW behind `VectorStore` (3.4.6, 3.2) | planned (1–2) | ADR-0020 (planned) | draft: `docs/drafts/schema.sql`; extension: `deploy/docker/postgres/initdb/` |
 | T21 | Data model incl. XYPE tables, no plaintext code column (3.6) | planned (1) | — | draft: `docs/drafts/schema.sql` |
 | T22 | Prompt templates as versioned files (3.6, 2) | planned (4) | ADR-0026 (planned) | rule: `.claude/rules/10-llm-prompts.md` |
 | T23 | Privacy: in-memory decrypt, no plaintext at rest, memory hygiene, no-logging (3.7) | planned (1–2) | ADR-0011 (planned) | rule: `.claude/rules/07-security-privacy.md` |
@@ -39,7 +39,7 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3 (plus th
 | T33 | Circuit breaker per provider/model (3.9) | planned (3) | ADR-0023 (planned) | — |
 | T34 | Retries: capped (interactive), exp. backoff + jitter, max 3 (async) (3.9) | planned (3, 5) | ADR-0023, ADR-0004 | — |
 | T35 | Backup model chain, optional budget-aware fan-out (3.9) | planned (3) | — | draft: `llm_models.fallback_model_id` |
-| T36 | Sync completion; async chat/agents via RabbitMQ with priority, DLQ, delayed retries, idempotency (3.9) | deviation (ADR-0004) | ADR-0004 | — |
+| T36 | Sync completion; async chat/agents via RabbitMQ with priority, DLQ, delayed retries, idempotency (3.9) | deviation (ADR-0004) | ADR-0004 | vhost with quorum default: `deploy/docker/rabbitmq/definitions.json` |
 | T37 | Task events pushed over the session stream (3.9) | planned (5) | — | — |
 | T38 | Reliability decision tree documented in `docs/reliability.md` (3.9) | planned (3) | ADR-0023 (planned) | — |
 | T39 | Prompt engineering: JSON-schema outputs, examples, negative prompting, model variants (3.10) | planned (4) | ADR-0026 (planned) | — |

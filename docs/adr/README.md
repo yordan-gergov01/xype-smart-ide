@@ -21,6 +21,7 @@ Written in Phase 1:
 |---|---|---|---|
 | [0007](0007-python-dependencies.md) | Python dependencies: pip with compiled, hashed requirements files | Accepted | §1, §8 |
 | [0008](0008-npm-typescript-tooling.md) | TypeScript tooling: npm workspaces, TypeScript 6.0, ESLint import rules | Accepted | §1, §8 |
+| [0034](0034-local-stack-compose.md) | Local stack: compose networks, least privilege and memory limits | Proposed | §1, §2, §8 |
 
 Planned (written in the phase that makes the decision):
 

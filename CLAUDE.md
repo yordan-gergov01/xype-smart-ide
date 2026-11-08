@@ -36,7 +36,7 @@ python tools/server_tool.py pytest         # unit; add -m integration for testco
 npm ci && npm run check                    # Node: npm only; format, lint, tsc, tests, jscpd
 python tools/check_size.py                 # 500-line source limit
 pre-commit run --all-files                 # everything CI runs that is fast
-docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env up -d   # docs/runbooks/local-dev.md
 ```
 
 Some commands become available as Phase 1 slices land; see `docs/plan.md`. Repo tooling needs Node 24 (`.nvmrc`) and Python ≥ 3.11; the server targets Python 3.12. Paid API endpoints are listed once in `tools/paid_api_hosts.txt` (hook, CI guard and settings stay in sync).

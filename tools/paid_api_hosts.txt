@@ -15,3 +15,5 @@ api.groq.com
 api.cohere.ai
 api.cohere.com
 api.voyageai.com
+# Ollama cloud models: paid remote inference (local Ollama runs with OLLAMA_NO_CLOUD=1).
+ollama.com/api
