@@ -1,0 +1,9 @@
+# Known vulnerabilities accepted for a limited time (ADR-0012). Each entry needs a reason
+# and an expiry; when it expires the CI scan fails again and the entry is re-reviewed.
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2027-01-31
+reason = """minimatch 10.2.6 (glob DoS) is a dev-only dependency of eslint and typescript-eslint, \
+which still require ^10; it only sees glob patterns from this repo's own lint config. \
+Remove once eslint allows minimatch >= 11.0.1."""

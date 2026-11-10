@@ -22,7 +22,7 @@ from common_lib.domain import ModelRef
 from common_lib.embeddings.ollama import OllamaEmbedder
 from common_lib.secret_bytes import SecretBytes
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.models]
 
 COMPOSE = yaml.safe_load(
     (Path(__file__).resolve().parents[3] / "deploy" / "docker-compose.yml").read_text("utf-8")

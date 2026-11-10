@@ -9,6 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from check_commit_msg import check  # noqa: E402
+from check_paid_config import CONFIG_FILES  # noqa: E402
+from check_paid_config import findings as paid_config_findings  # noqa: E402
 from check_size import glob_to_regex, long_functions  # noqa: E402
 
 
@@ -51,6 +53,62 @@ class SizeCheckTests(unittest.TestCase):
         body = "\n".join(["def f():"] + ["    x = 1"] * 50)
         self.assertEqual([(n, ln) for n, ln, _ in long_functions(body, 50)], [("f", 1)])
         self.assertEqual(long_functions("def g():\n    return 1\n", 50), [])
+
+
+class PaidConfigCheckTests(unittest.TestCase):
+    def test_refuses_enabling_values(self) -> None:
+        for text in (
+            "PAID_MODELS_ENABLED=true\n",
+            '  PAID_MODELS_ENABLED: "1"\n',
+            "      - PAID_MODELS_ENABLED=yes\n",
+            "OPENROUTER_API_KEY=placeholder\n",
+            "    DEEPSEEK_API_KEY: placeholder\n",
+            "LLM_PRIMARY=openrouter:deepseek/deepseek-v4-pro\n",
+            "  LLM_FALLBACK: deepseek:deepseek-flash\n",
+            "LLM_PRIMARY=deepseek\n",
+            "PAID_MODELS_ENABLED=True \n",
+            "PAID_MODELS_ENABLED=t\n",
+            "export PAID_MODELS_ENABLED=true\n",
+            "paid_models_enabled=true\n",
+            "  PAID_MODELS_ENABLED: ${PAID_MODELS_ENABLED:-true}\n",
+            "  LLM_PRIMARY: ${LLM_PRIMARY:-openrouter:x}\n",
+            "      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}\n",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(len(paid_config_findings("x.env.example", text)), 1)
+
+    def test_allows_disabled_and_pass_through_values(self) -> None:
+        for text in (
+            "PAID_MODELS_ENABLED=false\n",
+            "PAID_MODELS_ENABLED=0\n",
+            "PAID_MODELS_ENABLED: Off\n",
+            "PAID_MODELS_ENABLED=\n",
+            "OPENROUTER_API_KEY=\n",
+            "  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}\n",
+            "LLM_PRIMARY=mock:default\n",
+            "# PAID_MODELS_ENABLED=true\n",
+            "  PAID_MODELS_ENABLED: ${PAID_MODELS_ENABLED:-false}\n",
+            "  OPENROUTER_API_KEY: ~\n",
+            "  LLM_PRIMARY: ${LLM_PRIMARY}\n",
+            "OTHER_KEY=deepseek\n",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(paid_config_findings("x.env.example", text), [])
+
+    def test_reports_the_line(self) -> None:
+        found = paid_config_findings("deploy/a.yml", "a: 1\nPAID_MODELS_ENABLED: on\n")
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0].startswith("deploy/a.yml:2: PAID_MODELS_ENABLED"))
+
+    def test_checks_the_repository_config_files(self) -> None:
+        for rel in (
+            "deploy/env/.env.example",
+            "deploy/docker-compose.yml",
+            ".github/workflows/ci.yml",
+        ):
+            with self.subTest(rel=rel):
+                self.assertTrue(any(p.match(rel) for p in CONFIG_FILES))
+        self.assertFalse(any(p.match("deploy/env/.env") for p in CONFIG_FILES))
 
 
 if __name__ == "__main__":

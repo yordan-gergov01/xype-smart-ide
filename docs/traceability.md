@@ -50,4 +50,4 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3 (plus th
 | T44 | Prefix-cache-friendly prompt ordering (5) | planned (4) | ADR-0026 (planned) | rule: `.claude/rules/10-llm-prompts.md` |
 | T45 | `CostScheduler` off-peak deferral (5) | planned (5) | ADR-0028 (planned), ADR-0005 | — |
 | T46 | Budgets, degrade to cheaper models, hard kill switch (5) | planned (5) | — | — |
-| T47 | Paid models only via disabled adapter + fixtures; free models in dev/CI (0, 5) | in progress (mock provider done) | ADR-0005, ADR-0012 (planned) | `server/llm/providers/mock.py`; hook: `.claude/hooks/pre-bash-guard.mjs` |
+| T47 | Paid models only via disabled adapter + fixtures; free models in dev/CI (0, 5) | in progress (mock provider and guards done; paid adapter in Phase 10) | ADR-0005, ADR-0012 | `server/llm/providers/mock.py`; guards: `.claude/hooks/pre-bash-guard.mjs`, `tools/check_paid_api.py`, `tools/check_paid_config.py`, `server/tests/support/network_guard.py`; test: `server/tests/architecture/test_network_guard.py` |

@@ -57,7 +57,9 @@ pytest --cov
 
 From the repository root without activating it: `python tools/server_tool.py <tool> [args]`.
 Unit tests run by default; `pytest -m integration` runs the testcontainers tests (they pull
-the images pinned in `deploy/docker-compose.yml`).
+the images pinned in `deploy/docker-compose.yml`). CI runs `-m "integration and not models"`:
+tests marked `models` need the model volume compose downloads. A network guard refuses every
+connection from the test process to another machine (`tests/support/network_guard.py`, ADR-0012).
 Coverage must stay at 85% or more.
 
 ## Adding or upgrading a dependency
