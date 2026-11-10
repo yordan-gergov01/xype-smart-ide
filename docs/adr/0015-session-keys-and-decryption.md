@@ -51,10 +51,10 @@ This layer keeps the session key out of passive records on the path, such as edg
 
 ### Directional keys and nonces
 
-- Both sides derive `k_c2s = HKDF(session key, "c2s")` and `k_s2c = HKDF(session key, "s2c")`. Each direction encrypts only with its own key, so a server-to-client message cannot be reflected back as client-to-server.
+- Both sides derive `k_c2s = HKDF(session key, info = "xype payload" ‖ "c2s")` and `k_s2c` likewise with `"s2c"` (no salt). Each direction encrypts only with its own key, so a server-to-client message cannot be reflected back as client-to-server. Each side seals only in its own direction (`CryptoBox(sends=…)`), and the server's key store hands out counters only for `s2c` and records received counters only for `c2s`, so one (key, nonce) pair is never used by both sides.
 - The nonce is 4 zero bytes followed by a 64-bit counter, per direction and per key. The receiver keeps the highest counter seen per `(key_id, direction)`: the server in the key store, the client in memory. It refuses any counter that is not higher. One stream is ordered, so this replaces an unbounded set of seen nonces.
 - **One key, one stream.** A key is bound to the first stream whose `Hello` names it (its `session_id`) and is refused on any other stream, so two windows or two gateway replicas can never encrypt under the same key. After a reconnect the client mints a new key.
-- The server allocates its `k_s2c` counters with an atomic `INCR` on `xype:skc:<key_id>` in the key store before each encryption, never from process memory, so a replica restart cannot reuse a nonce.
+- The server allocates its `k_s2c` counters with an atomic `INCR` on `xype:skc:<key_id>:s2c` in the key store before each encryption, never from process memory, so a replica restart cannot reuse a nonce. A received counter is recorded only after the payload authenticated, so a forged high counter cannot use up the window.
 - The server enforces a maximum key age of 12 hours and at most 2^24 encryptions per direction, and refuses payloads under a key past either limit. The client asks for a new key before then, or on reconnect.
 
 ### Encodings
@@ -67,7 +67,7 @@ The AAD is the framed encoding of these fields:
 
 `version ‖ direction ‖ key_id ‖ message_id ‖ request_id ‖ field_number ‖ repository_id ‖ obfuscated_file_id ‖ chunk_hash ‖ line_start ‖ line_end`
 
-Fields that a message has no use for are empty. Binding the `ChunkRef` stops a ciphertext from being moved to another chunk or repository. The receiver rebuilds the AAD from the plain fields and never trusts the `aad` bytes it was sent. The GCM tag, and therefore the AAD, can only be checked with the key, so the gateway checks the plain envelope fields and the indexer verifies the tag when it decrypts.
+Fields that a message has no use for are empty strings, and unused integer fields encode as `0`. Binding the `ChunkRef` stops a ciphertext from being moved to another chunk or repository. The receiver rebuilds the AAD from the plain fields and never trusts the `aad` bytes it was sent. The GCM tag, and therefore the AAD, can only be checked with the key, so the gateway checks the plain envelope fields and the indexer verifies the tag when it decrypts.
 
 ### Server-side key storage
 
@@ -75,10 +75,11 @@ Fields that a message has no use for are empty. Binding the `ChunkRef` stops a c
   - `maxmemory-policy noeviction`, no persistence, about 32 MiB;
   - on its own internal network `keys`, which only `backend` and `indexer` join;
   - a restart is a key rotation: clients mint a new key, queued chunks fail to decrypt, go to the DLQ and are re-uploaded on the next sync.
-- Key `xype:sk:<key_id>` holds `AES-256-GCM(KEK_session, session_key, aad = key_id ‖ user_id ‖ kek_id)` plus `kek_id`. `KEK_session = HKDF(KEK, "session-keys")`, so session keys and repository keys (ADR-0016, in Postgres) are wrapped under different subkeys.
-- Key `xype:skn:<key_id>:<direction>` holds the highest nonce counter seen: one integer per direction, not a set.
+- Key `xype:sk:<key_id>` holds one JSON record (key id, user, family, creation time, `kek_id`, wrap nonce, wrapped key) with `AES-256-GCM(KEK_session, session_key, aad = "session-kek" ‖ key_id ‖ user_id ‖ family_id ‖ created_at ‖ kek_id)`, so no field of the record can be changed or the record moved to another key's slot unnoticed. `KEK_session = HKDF(KEK, info = "xype kek" ‖ "session-keys")` and the repository subkey uses `"repo-keys"`, so session keys and repository keys (ADR-0016, in Postgres) are wrapped under different subkeys. A key is never overwritten (`SET NX`); every write is one Lua script. The revoke script builds key names from the index it reads, which needs a single Redis node, not Redis Cluster (the `keystore` is one small node by design).
+- Key `xype:skb:<key_id>` holds the stream the key is bound to.
+- Key `xype:skn:<key_id>:c2s` holds the highest received counter: one integer, not a set. Every per-key entry takes the key's remaining TTL.
 - Sets `xype:sku:<user_id>` and `xype:skf:<family_id>` list a user's and a token family's key ids. Disabling a user deletes all of the user's keys; refresh-token reuse (ADR-0014) deletes the keys of that family only. Queued work under a deleted key stops decrypting.
-- The TTL is 24 hours (`SESSION_KEY_TTL_S`): a working day plus queued jobs that outlive the stream.
+- The TTL is 24 hours (`SESSION_KEY_TTL_SECONDS`): a working day plus queued jobs that outlive the stream. The 12-hour maximum age is checked against `created_at` by the gateway (slice 5).
 - The KEK is 256 bits. It comes from the environment (`KEK_CURRENT`, `KEK_PREVIOUS`, each with an id), moves to Docker secrets before hosting and to a KMS later (plan §3a). Compose gives it to `backend` and `indexer` only. Rotation re-wraps the stored keys, and `KEK_PREVIOUS` is removed once nothing is wrapped under it. The procedure goes into `docs/runbooks/key-rotation.md` in slice 3.
 - ACLs on `keystore`: the backend's user may read and write `xype:sk*`, with no channels. The indexer's user is `-@all +get %R~xype:sk:*`: one command, one key pattern, no `SCAN` or `KEYS`.
 
@@ -108,7 +109,7 @@ A chunk that fails the server scrub re-check is not embedded. It is reported bac
 ### Confirmation
 
 - The Python and TypeScript implementations check shared test vectors for the key derivation, the directional keys, the AAD encoding and AES-GCM (slices 3 and 9).
-- Contract tests for `CryptoBox` and `KeyStore` with their fakes. They refuse a second stream under one key, and they refuse: a wrong AAD, a moved ciphertext (other `ChunkRef`), a reflected message, a foreign `key_id`, a repeated or lower nonce counter, an expired or over-used key, and an all-zero shared secret.
+- Unit tests for `CryptoBox` and the key functions, and the `KeyStore` contract suite against its fake and against Redis. They refuse a second stream under one key, and they refuse: a wrong AAD, a moved ciphertext (other `ChunkRef`), a reflected message, a foreign `key_id`, a repeated or lower nonce counter, an expired or over-used key, and an all-zero shared secret.
 - Cross-team negative tests for every message that names a repository.
 - After indexing, a privacy test scans RabbitMQ messages, Redis values and logs (slice 8): no plaintext and no unwrapped key.
 - ADR-0034's compose test asserts that only `backend` and `indexer` receive the KEK and join `keys`, that the indexer does not join `data`, and that `keystore` uses `noeviction`. A test checks the indexer's ACL.

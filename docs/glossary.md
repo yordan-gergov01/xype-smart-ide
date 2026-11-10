@@ -34,7 +34,9 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Selective fetch**: the server asking the client, over the open session stream, for the exact chunks it needs.
 
-**Scrubbing**: replacing secrets and personal data with `<SECRET_REMOVED>` on the client before encryption.
+**Scrubbing**: replacing secrets and personal data with `<SECRET_REMOVED>` on the client before encryption; the server repeats the check after decryption (ADR-0019).
+
+**Scrub corpus**: the shared, synthetic test cases (`packages/scrub-rules/corpus.json`) that both scrubber implementations must reproduce exactly.
 
 **Session stream**: the persistent bidirectional gRPC connection between one IDE window and the server.
 
@@ -44,6 +46,16 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **KEK**: the server's key-encryption key; session and repository keys are stored only wrapped under it.
 _Avoid_: master key
+
+**KEK ring**: the current KEK, which wraps, and the previous one, which still unwraps during a rotation (ADR-0015).
+
+**Direction key**: the key derived from a session key for one direction of the stream (client-to-server or server-to-client).
+
+**Counter nonce**: a GCM nonce of four zero bytes and a 64-bit counter; the receiver refuses any counter not above the highest it has seen.
+
+**Framing**: the length-prefixed encoding (`frame`) used for every keyed hash, key derivation and AAD, so field boundaries are unambiguous.
+
+**ID domain**: the kind of thing an obfuscated id names (file, dir, symbol, chunk position, chunk content); part of the HMAC input.
 
 **Client credentials**: the `client_id` and secret an admin issues to one developer, exchanged for tokens (ADR-0014).
 

@@ -45,6 +45,10 @@ on later changes. A privacy suite proves that no plaintext lands anywhere on the
 
 Every slice that adds a message naming a repository adds a cross-team negative test.
 
+Carried forward from slice 3 (review):
+- Slice 5: enforce the 12-hour maximum session-key age from `created_at`; record a received nonce counter only after `CryptoBox.open` succeeded.
+- Slice 8: the indexer image includes `packages/scrub-rules/rules.json`; the re-check refuses chunks over 64 KiB and runs in `asyncio.to_thread`; the keystore ACLs allow `EVALSHA`/`SCRIPT LOAD` for the backend user; `cryptography` goes into the indexer's requirements.
+
 ## Privacy rules for every slice
 
 - Each slice that adds a storage or transport path ships its own privacy test (rule 07):

@@ -1,0 +1,11 @@
+# gitleaks configuration: the default rules, plus allow-listed synthetic test data.
+# Only the crypto test vectors are allow-listed: their keys are derived from fixed
+# counting bytes (00 01 02 ...), not secrets. The scrubbing corpus needs no entry: its
+# inputs are stored as short fragments (ADR-0019).
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic test data: crypto vectors"
+paths = ['''^packages/crypto-vectors/vectors\.json$''']

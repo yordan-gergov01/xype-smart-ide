@@ -1,0 +1,600 @@
+{
+  "about": "Synthetic cases only, never a real secret. Each input and expected text is stored as fragments of at most 8 characters, joined by the tests, so secret scanners never see a whole token (ADR-0019).",
+  "cases": [
+    {
+      "name": "private-key-block",
+      "input": [
+        "KEY = \"\"",
+        "\"-----BE",
+        "GIN RSA ",
+        "PRIVATE ",
+        "KEY-----",
+        "\nZmFrZS1",
+        "rZXktZm9",
+        "yLXRlc3R",
+        "zLW9ubHk",
+        "tbm90LXJ",
+        "lYWw=\nZm",
+        "FrZS1rZX",
+        "ktZm9yLX",
+        "Rlc3RzLW",
+        "9ubHktbm",
+        "90LXJlYW",
+        "w=\n-----",
+        "END RSA ",
+        "PRIVATE ",
+        "KEY-----",
+        "\"\"\"\nx = ",
+        "1\n"
+      ],
+      "expected": ["KEY = \"\"", "\"<SECRET", "_REMOVED", ">\n\n\n\"\"\"\n", "x = 1\n"],
+      "findings": {
+        "private-key": 1
+      }
+    },
+    {
+      "name": "aws-access-key-id",
+      "input": ["aws_acce", "ss_key_i", "d = AKIA", "IOSFODNN", "7EXAMPLE", "\n"],
+      "expected": ["aws_acce", "ss_key_i", "d = <SEC", "RET_REMO", "VED>\n"],
+      "findings": {
+        "aws-access-key-id": 1
+      }
+    },
+    {
+      "name": "github-token-in-yaml",
+      "input": ["env:\n  G", "H: ghp_F", "AKEfakeF", "AKEfakeF", "AKEfakeF", "AKEfake0", "000\n"],
+      "expected": ["env:\n  G", "H: <SECR", "ET_REMOV", "ED>\n"],
+      "findings": {
+        "github-token": 1
+      }
+    },
+    {
+      "name": "jwt",
+      "input": [
+        "headers ",
+        "= {'Auth",
+        "orizatio",
+        "n': 'Bea",
+        "rer eyJh",
+        "bGciOiJu",
+        "b25lIn0.",
+        "eyJzdWIi",
+        "OiJ0ZXN0",
+        "In0.ZmFr",
+        "ZXNpZ25h",
+        "dHVyZQ'}",
+        "\n"
+      ],
+      "expected": [
+        "headers ",
+        "= {'Auth",
+        "orizatio",
+        "n': 'Bea",
+        "rer <SEC",
+        "RET_REMO",
+        "VED>'}\n"
+      ],
+      "findings": {
+        "jwt": 1
+      }
+    },
+    {
+      "name": "url-userinfo",
+      "input": ["DATABASE", "_URL = \"", "postgres", "://app:h", "unter2@d", "b:5432/x", "ype\"\n"],
+      "expected": [
+        "DATABASE",
+        "_URL = \"",
+        "postgres",
+        "://<SECR",
+        "ET_REMOV",
+        "ED>@db:5",
+        "432/xype",
+        "\"\n"
+      ],
+      "findings": {
+        "url-userinfo": 1
+      }
+    },
+    {
+      "name": "python-password",
+      "input": ["password", " = \"s3cr", "3t-Pa55\"", "\n"],
+      "expected": ["password", " = \"<SEC", "RET_REMO", "VED>\"\n"],
+      "findings": {
+        "secret-assignment": 1
+      }
+    },
+    {
+      "name": "yaml-api-key",
+      "input": ["service:", "\n  api_k", "ey: abcd", "1234efgh", "\n"],
+      "expected": ["service:", "\n  api_k", "ey: <SEC", "RET_REMO", "VED>\n"],
+      "findings": {
+        "secret-assignment": 1
+      }
+    },
+    {
+      "name": "dotenv-client-secret",
+      "input": ["CLIENT_S", "ECRET=xy", "zXYZ123\n", "DEBUG=tr", "ue\n"],
+      "expected": ["CLIENT_S", "ECRET=<S", "ECRET_RE", "MOVED>\nD", "EBUG=tru", "e\n"],
+      "findings": {
+        "secret-assignment": 1
+      }
+    },
+    {
+      "name": "dockerfile-env",
+      "input": [
+        "FROM pyt",
+        "hon:3.12",
+        "\nENV DB_",
+        "PASSWORD",
+        " hunter2",
+        "hunter2\n",
+        "RUN echo",
+        " ok\n"
+      ],
+      "expected": [
+        "FROM pyt",
+        "hon:3.12",
+        "\nENV DB_",
+        "PASSWORD",
+        " <SECRET",
+        "_REMOVED",
+        ">\nRUN ec",
+        "ho ok\n"
+      ],
+      "findings": {
+        "dockerfile-secret": 1
+      }
+    },
+    {
+      "name": "email",
+      "input": ["# Contac", "t: jane.", "doe@exam", "ple.com ", "for acce", "ss\n"],
+      "expected": ["# Contac", "t: <SECR", "ET_REMOV", "ED> for ", "access\n"],
+      "findings": {
+        "email": 1
+      }
+    },
+    {
+      "name": "phone",
+      "input": ["support ", "= 'call ", "+359 88 ", "123 4567", "'\n"],
+      "expected": ["support ", "= 'call ", "<SECRET_", "REMOVED>", "'\n"],
+      "findings": {
+        "phone": 1
+      }
+    },
+    {
+      "name": "openrouter-key",
+      "input": [
+        "OPENROUT",
+        "ER = \"sk",
+        "-or-v1-0",
+        "f0f0f0f0",
+        "f0f0f0f0",
+        "f0f0f0f0",
+        "f0f0f0f0",
+        "f0f0f0f0",
+        "f0f0f0f0",
+        "f0f0f0f0",
+        "f0f0f0f\"",
+        "\n"
+      ],
+      "expected": ["OPENROUT", "ER = \"<S", "ECRET_RE", "MOVED>\"\n"],
+      "findings": {
+        "llm-api-key": 1
+      }
+    },
+    {
+      "name": "stripe-test-key",
+      "input": ["stripe.a", "pi = 'sk", "_test_FA", "KEfakeFA", "KEfake00", "000000'\n"],
+      "expected": ["stripe.a", "pi = '<S", "ECRET_RE", "MOVED>'\n"],
+      "findings": {
+        "stripe-key": 1
+      }
+    },
+    {
+      "name": "slack-token",
+      "input": ["hook = '", "xoxb-000", "00000000", "0-FAKEfa", "keFAKE'\n"],
+      "expected": ["hook = '", "<SECRET_", "REMOVED>", "'\n"],
+      "findings": {
+        "slack-token": 1
+      }
+    },
+    {
+      "name": "gitlab-token",
+      "input": ["remote =", " 'glpat-", "FAKEfake", "FAKEfake", "0000'\n"],
+      "expected": ["remote =", " '<SECRE", "T_REMOVE", "D>'\n"],
+      "findings": {
+        "gitlab-token": 1
+      }
+    },
+    {
+      "name": "azure-connection",
+      "input": [
+        "conn = '",
+        "DefaultE",
+        "ndpoints",
+        "Protocol",
+        "=https;A",
+        "ccountNa",
+        "me=x;Acc",
+        "ountKey=",
+        "bm90LWEt",
+        "cmVhbC1r",
+        "ZXktanVz",
+        "dC1hLXRl",
+        "c3Q=;'\n"
+      ],
+      "expected": [
+        "conn = '",
+        "DefaultE",
+        "ndpoints",
+        "Protocol",
+        "=https;A",
+        "ccountNa",
+        "me=x;Acc",
+        "ountKey=",
+        "<SECRET_",
+        "REMOVED>",
+        ";'\n"
+      ],
+      "findings": {
+        "azure-connection-key": 1
+      }
+    },
+    {
+      "name": "gcp-private-key-id",
+      "input": [
+        "{\n  \"typ",
+        "e\": \"ser",
+        "vice_acc",
+        "ount\",\n ",
+        " \"privat",
+        "e_key_id",
+        "\": \"0123",
+        "456789ab",
+        "cdef0123",
+        "456789ab",
+        "cdef0123",
+        "4567\"\n}\n"
+      ],
+      "expected": [
+        "{\n  \"typ",
+        "e\": \"ser",
+        "vice_acc",
+        "ount\",\n ",
+        " \"privat",
+        "e_key_id",
+        "\": \"<SEC",
+        "RET_REMO",
+        "VED>\"\n}\n"
+      ],
+      "findings": {
+        "gcp-private-key-id": 1
+      }
+    },
+    {
+      "name": "hex-40-entropy",
+      "input": ["SIGNING ", "= \"9f86d", "081884c7", "d659a2fe", "aa0c55ad", "015a3bf4", "f1b\"\n"],
+      "expected": ["SIGNING ", "= \"<SECR", "ET_REMOV", "ED>\"\n"],
+      "findings": {
+        "high-entropy": 1
+      }
+    },
+    {
+      "name": "hex-32-entropy",
+      "input": ["salt: 'c", "0ffee15d", "eadbeef0", "12345678", "9abcdef'", "\n"],
+      "expected": ["salt: '<", "SECRET_R", "EMOVED>'", "\n"],
+      "findings": {
+        "high-entropy": 1
+      }
+    },
+    {
+      "name": "uuid-as-key",
+      "input": ["api_key ", "= \"123e4", "567-e89b", "-12d3-a4", "56-42661", "4174000\"", "\n"],
+      "expected": ["api_key ", "= \"<SECR", "ET_REMOV", "ED>\"\n"],
+      "findings": {
+        "secret-assignment": 1
+      }
+    },
+    {
+      "name": "uuid-allowed",
+      "input": ["request_", "id = \"12", "3e4567-e", "89b-12d3", "-a456-42", "66141740", "00\"\n"],
+      "expected": [
+        "request_",
+        "id = \"12",
+        "3e4567-e",
+        "89b-12d3",
+        "-a456-42",
+        "66141740",
+        "00\"\n"
+      ],
+      "findings": {}
+    },
+    {
+      "name": "lockfile-integrity",
+      "input": [
+        "\"integri",
+        "ty\": \"sh",
+        "a512-DJL",
+        "D8yYI1bU",
+        "+JJGUO+9",
+        "6kA0/di+",
+        "rysAZ1/V",
+        "o+uMRBtF",
+        "6EVYsqkS",
+        "8WX+fEGd",
+        "bdwowT+o",
+        "rgH+NOXA",
+        "c7aVGKQG",
+        "8LQ==\"\n"
+      ],
+      "expected": [
+        "\"integri",
+        "ty\": \"sh",
+        "a512-DJL",
+        "D8yYI1bU",
+        "+JJGUO+9",
+        "6kA0/di+",
+        "rysAZ1/V",
+        "o+uMRBtF",
+        "6EVYsqkS",
+        "8WX+fEGd",
+        "bdwowT+o",
+        "rgH+NOXA",
+        "c7aVGKQG",
+        "8LQ==\"\n"
+      ],
+      "findings": {}
+    },
+    {
+      "name": "typescript-token",
+      "input": ["const to", "ken = 'a", "bc123def", "456';\n"],
+      "expected": ["const to", "ken = '<", "SECRET_R", "EMOVED>'", ";\n"],
+      "findings": {
+        "secret-assignment": 1
+      }
+    },
+    {
+      "name": "already-scrubbed",
+      "input": [
+        "password",
+        " = \"<SEC",
+        "RET_REMO",
+        "VED>\"\nur",
+        "l = \"htt",
+        "ps://<SE",
+        "CRET_REM",
+        "OVED>@ho",
+        "st\"\n"
+      ],
+      "expected": [
+        "password",
+        " = \"<SEC",
+        "RET_REMO",
+        "VED>\"\nur",
+        "l = \"htt",
+        "ps://<SE",
+        "CRET_REM",
+        "OVED>@ho",
+        "st\"\n"
+      ],
+      "findings": {}
+    },
+    {
+      "name": "plain-code",
+      "input": ["def add(", "a, b):\n ", "   retur", "n a + b\n"],
+      "expected": ["def add(", "a, b):\n ", "   retur", "n a + b\n"],
+      "findings": {}
+    },
+    {
+      "name": "short-hex-kept",
+      "input": ["color = ", "\"#c0ffee", "\"\n"],
+      "expected": ["color = ", "\"#c0ffee", "\"\n"],
+      "findings": {}
+    },
+    {
+      "name": "base64-entropy",
+      "input": [
+        "blob = \"",
+        "Qm9yaW5n",
+        "TmFtZTg0",
+        "Mlg3cVpL",
+        "djJMOWZX",
+        "bXBWYk4z",
+        "RHlTdA==",
+        "\"\n"
+      ],
+      "expected": ["blob = \"", "<SECRET_", "REMOVED>", "\"\n"],
+      "findings": {
+        "high-entropy": 1
+      }
+    },
+    {
+      "name": "identifier-kept",
+      "input": ["componen", "t = 'Hea", "derNavig", "ationDro", "pdownMen", "u'\n"],
+      "expected": ["componen", "t = 'Hea", "derNavig", "ationDro", "pdownMen", "u'\n"],
+      "findings": {}
+    },
+    {
+      "name": "path-kept",
+      "input": ["path = '", "src/comp", "onents/n", "avigatio", "n/Header", "-v2'\n"],
+      "expected": ["path = '", "src/comp", "onents/n", "avigatio", "n/Header", "-v2'\n"],
+      "findings": {}
+    },
+    {
+      "name": "json-escaped-private-key",
+      "input": [
+        "{\n  \"pri",
+        "vate_key",
+        "\": \"----",
+        "-BEGIN P",
+        "RIVATE K",
+        "EY-----\\",
+        "nZmFrZS1",
+        "rZXktZm9",
+        "yLXRlc3R",
+        "zLW9ubHk",
+        "tbm90LXJ",
+        "lYWw=\\nZ",
+        "mFrZS1rZ",
+        "XktZm9yL",
+        "XRlc3RzL",
+        "W9ubHktb",
+        "m90LXJlY",
+        "Ww=\\n---",
+        "--END PR",
+        "IVATE KE",
+        "Y-----\\n",
+        "\",\n  \"cl",
+        "ient_ema",
+        "il\": \"sv",
+        "c@exampl",
+        "e.iam.gs",
+        "erviceac",
+        "count.co",
+        "m\"\n}\n"
+      ],
+      "expected": [
+        "{\n  \"pri",
+        "vate_key",
+        "\": \"<SEC",
+        "RET_REMO",
+        "VED>\\n\",",
+        "\n  \"clie",
+        "nt_email",
+        "\": \"<SEC",
+        "RET_REMO",
+        "VED>\"\n}\n"
+      ],
+      "findings": {
+        "email": 1,
+        "private-key": 1
+      }
+    },
+    {
+      "name": "concatenated-private-key",
+      "input": [
+        "KEY = (\n",
+        "    \"---",
+        "--BEGIN ",
+        "PRIVATE ",
+        "KEY-----",
+        "\\n\"\n    ",
+        "\"ZmFrZS1",
+        "rZXktZm9",
+        "yLXRlc3R",
+        "zLW9ubHk",
+        "tbm90LXJ",
+        "lYWw=\\n\"",
+        "\n    \"--",
+        "---END P",
+        "RIVATE K",
+        "EY-----\\",
+        "n\"\n)\n"
+      ],
+      "expected": [
+        "KEY = (\n",
+        "    \"---",
+        "--BEGIN ",
+        "PRIVATE ",
+        "KEY-----",
+        "\\n\"\n    ",
+        "\"<SECRET",
+        "_REMOVED",
+        ">\\n\"\n   ",
+        " \"-----E",
+        "ND PRIVA",
+        "TE KEY--",
+        "---\\n\"\n)",
+        "\n"
+      ],
+      "findings": {
+        "high-entropy": 1
+      }
+    },
+    {
+      "name": "python-typed-password",
+      "input": ["password", ": str = ", "\"hunter2", "hunter2\"", "\n"],
+      "expected": ["password", ": str = ", "\"<SECRET", "_REMOVED", ">\"\n"],
+      "findings": {
+        "secret-assignment": 1
+      }
+    },
+    {
+      "name": "typescript-typed-password",
+      "input": ["const pa", "ssword: ", "string =", " \"hunter", "2hunter2", "\";\n"],
+      "expected": ["const pa", "ssword: ", "string =", " \"<SECRE", "T_REMOVE", "D>\";\n"],
+      "findings": {
+        "secret-assignment": 1
+      }
+    },
+    {
+      "name": "typescript-union-type",
+      "input": ["let apiK", "ey: stri", "ng | und", "efined =", " \"hunter", "2hunter2", "\";\n"],
+      "expected": [
+        "let apiK",
+        "ey: stri",
+        "ng | und",
+        "efined =",
+        " \"<SECRE",
+        "T_REMOVE",
+        "D>\";\n"
+      ],
+      "findings": {
+        "secret-assignment": 1
+      }
+    },
+    {
+      "name": "go-typed-password",
+      "input": ["var pass", "word str", "ing = \"h", "unter2hu", "nter2\"\n"],
+      "expected": ["var pass", "word str", "ing = \"<", "SECRET_R", "EMOVED>\"", "\n"],
+      "findings": {
+        "secret-assignment": 1
+      }
+    },
+    {
+      "name": "comparison",
+      "input": ["if passw", "ord == \"", "hunter2h", "unter2\":", "\n    pas", "s\n"],
+      "expected": ["if passw", "ord == \"", "<SECRET_", "REMOVED>", "\":\n    p", "ass\n"],
+      "findings": {
+        "secret-assignment": 1
+      }
+    },
+    {
+      "name": "token-in-prose-kept",
+      "input": ["# Token ", "refreshT", "okenHand", "lerFacto", "ry is us", "ed here\n"],
+      "expected": ["# Token ", "refreshT", "okenHand", "lerFacto", "ry is us", "ed here\n"],
+      "findings": {}
+    },
+    {
+      "name": "bearer-opaque-token",
+      "input": [
+        "curl -H ",
+        "'Authori",
+        "zation: ",
+        "Bearer a",
+        "bcdefghi",
+        "jklmnopq",
+        "rstuvwx1",
+        "2345' ht",
+        "tps://ap",
+        "i.exampl",
+        "e.com\n"
+      ],
+      "expected": [
+        "curl -H ",
+        "'Authori",
+        "zation: ",
+        "Bearer <",
+        "SECRET_R",
+        "EMOVED>'",
+        " https:/",
+        "/api.exa",
+        "mple.com",
+        "\n"
+      ],
+      "findings": {
+        "bearer-token": 1
+      }
+    }
+  ]
+}

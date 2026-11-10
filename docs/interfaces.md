@@ -22,7 +22,7 @@ Conventions:
 | tasks | `TaskQueue`, `TaskHandler`, `CostScheduler` | `backend/services/tasks/` (Protocol), `backend/messaging/` (RabbitMQ) |
 | router | `ModelRouter` | `backend/services/router/` |
 | prompts | `PromptRegistry` | `backend/services/prompts/`; templates as files in `server/prompts/` |
-| security | `CryptoBox`, `SecretScrubber`, `KeyStore`, `hmac_id` | `backend/services/security/`; `KeyStore` adapter also in `indexer/`; client side in `clients/xype-ai` |
+| security | `CryptoBox`, `SecretScrubber`, `KeyStore`, `hmac_id` | `common_lib/security/` (implemented; shared by the backend and the indexer), `KeyStore` adapter `common_lib/keystore/` (Redis only); client side in `clients/xype-ai` |
 | auth | `CredentialVerifier`, `Principal` | `backend/services/auth/` |
 | connectors | `ConnectorClient` | `backend/services/connectors/` (Protocols), adapters wired in `backend/main.py` |
 | observability | `Metrics` | `common_lib` (used by every service); added when services emit metrics; HTTP metrics live in the transport layer (ADR-0011) |
@@ -278,28 +278,41 @@ class PromptRegistry(Protocol):
 ## security
 
 ```python
-class CryptoBox(Protocol):
-    """AES-256-GCM with per-session keys. Server-side: decrypt in memory only."""
-    def encrypt(self, key_id: str, plaintext: SecretBytes, *, aad: bytes) -> EncryptedPayload: ...
-    def decrypt(self, payload: EncryptedPayload) -> SecretBytes: ...
-    def rotate(self, key_id: str) -> str: ...
+class CryptoBox:  # concrete: one implementation, no external dependency
+    """AES-256-GCM under per-direction keys with counter nonces (ADR-0015)."""
+    def __init__(self, *, sends: Direction) -> None: ...   # seals only this direction
+    def seal(self, session_key: SecretBytes, counter: int, plaintext: SecretBytes,
+             context: PayloadContext) -> EncryptedPayload: ...
+    def open(self, session_key: SecretBytes, payload: EncryptedPayload,
+             context: PayloadContext) -> SecretBytes: ...   # caller wipes
 
-class SecretScrubber(Protocol):
-    """Regex + entropy rules; runs on the client before encryption and again server-side as a check."""
-    def scrub(self, text: str) -> "ScrubResult": ...      # text with <SECRET_REMOVED>, findings count
+class SecretScrubber:  # concrete: the shared rules in packages/scrub-rules/ (ADR-0019)
+    def scrub(self, text: str) -> ScrubResult: ...      # text with <SECRET_REMOVED>, counts per rule
 ```
 
-Metadata obfuscation is a plain function in `security` — `hmac_id(repo_key: SecretBytes, domain: str, *fields: str) -> str` with length-prefixed fields (ADR-0016) — not an interface: one implementation, no external dependency.
+`CryptoBox` and `SecretScrubber` were sketched as Protocols in Phase 0; they became concrete classes because each has exactly one implementation and no external dependency to fake (rule 02, no speculative seams). Key derivation and wrapping are plain functions in `common_lib/security/keys.py`.
+
+Metadata obfuscation is a plain function in `security` — `hmac_id(repo_key: SecretBytes, domain: IdDomain, *fields: str) -> str` with length-prefixed fields (ADR-0016) — not an interface: one implementation, no external dependency.
 
 ```python
+@dataclass(frozen=True, slots=True)
+class SessionKeyRecord:          # who a key belongs to; never the key
+    key_id: str
+    user_id: str
+    family_id: str
+    created_at: datetime
+
 class KeyStore(Protocol):
-    """Session keys wrapped under the KEK in the `keystore` Redis (ADR-0015)."""
-    async def put(self, key_id: str, user_id: UUID, key: SecretBytes, *, ttl_s: int) -> None: ...
-    async def get(self, key_id: str) -> SecretBytes: ...      # unwrapped; caller wipes
-    async def revoke_user(self, user_id: UUID) -> None: ...
-    async def revoke_family(self, family_id: UUID) -> None: ...
-    async def advance_nonce(self, key_id: str, direction: str, counter: int) -> None:
+    """Session keys wrapped under the KEK in the `keystore` Redis (ADR-0015).
+    Server side only: counters are allocated for s2c and recorded for c2s."""
+    async def put(self, record: SessionKeyRecord, key: SecretBytes, *, ttl_seconds: int) -> None: ...
+    async def get(self, key_id: str) -> tuple[SessionKeyRecord, SecretBytes]: ...   # caller wipes
+    async def bind_stream(self, key_id: str, session_id: str) -> None: ...  # one key, one stream
+    async def advance_nonce(self, key_id: str, direction: Direction, counter: int) -> None:
         """Refuses a counter that is not above the highest seen."""
+    async def next_counter(self, key_id: str, direction: Direction) -> int: ...  # atomic
+    async def revoke_user(self, user_id: str) -> None: ...
+    async def revoke_family(self, family_id: str) -> None: ...
 
 @dataclass(frozen=True, slots=True)
 class Principal:
@@ -416,8 +429,8 @@ Client-side context-engine interfaces (TypeScript, Phase 2): `Chunker`, `CallGra
 | TaskHandler | ✅ | tasks |
 | ModelRouter | ✅ | router |
 | PromptRegistry | ✅ | prompts |
-| CryptoBox | ✅ | security |
-| SecretScrubber | ✅ | security |
+| CryptoBox (concrete) | ✅ | security |
+| SecretScrubber (concrete) | ✅ | security |
 | KeyStore | ✅ | security |
 | CredentialVerifier | ✅ | auth |
 | MerkleIndex | ✅ | indexing |

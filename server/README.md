@@ -8,7 +8,7 @@ later phases in `docs/plan.md`.
 |---|---|
 | `backend/` | The API: `main.py` (composition root), `api/` (routes, middleware), `services/`, `dal/`, `messaging/`, `core/` (settings, clients); `Dockerfile` |
 | `llm/` | LLM worker: `providers/` with the `LLMProvider` Protocol and `MockLLMProvider`; no database or cache access |
-| `common_lib/` | Code every service imports: errors, domain types, settings, logging, tracing, correlation ids, clock, `SecretBytes`, LLM value types, ORM models (`models/`, backend and migrations only) and the embedder (`embeddings/`, with its HTTP client) |
+| `common_lib/` | Code every service imports: errors, domain types, settings, logging, tracing, correlation ids, clock, `SecretBytes`, LLM value types, ORM models (`models/`, backend and migrations only), the embedder (`embeddings/`, with its HTTP client), security (`security/`: payload encryption, key handling, obfuscated ids, scrubbing; ADR-0015, ADR-0016, ADR-0019) and the Redis key store (`keystore/`, Redis only) |
 | `tests/unit/<package>/` | Unit tests, no I/O |
 | `tests/integration/` | Real Postgres, Redis, RabbitMQ and Ollama through testcontainers (Docker needed). The embedder test uses the models in the `xype_ollama_data` volume: start `deploy/docker-compose.yml` once to download them |
 | `tests/support/` | Fakes and contract suites shared by unit and integration tests (importable as `support`) |
