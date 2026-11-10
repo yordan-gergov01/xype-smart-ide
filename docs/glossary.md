@@ -38,6 +38,23 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Session stream**: the persistent bidirectional gRPC connection between one IDE window and the server.
 
+**Session key**: the AES-256 key, issued per session and user, that encrypts code between the client and the server (ADR-0015).
+
+**Repository key**: the per-repository HMAC key behind every obfuscated id of that repository (ADR-0016).
+
+**KEK**: the server's key-encryption key; session and repository keys are stored only wrapped under it.
+_Avoid_: master key
+
+**Client credentials**: the `client_id` and secret an admin issues to one developer, exchanged for tokens (ADR-0014).
+
+**Principal**: the authenticated caller of a request or stream: user, team and role.
+
+**Token family**: the chain of refresh tokens of one IDE window; reusing a revoked one revokes the whole family.
+
+**Wrapping key**: a key used only to encrypt another key, such as the KEK or the key derived during the session-key exchange.
+
+**Key store**: the non-evicting Redis instance that holds wrapped session keys and nonce counters (ADR-0015).
+
 ## AI features
 
 **Completion**: an inline code suggestion at the cursor, including fill-in-the-middle; the synchronous path.

@@ -50,7 +50,7 @@ Import contracts (import-linter, run by pre-commit, CI and `tests/architecture`)
 - `backend` and each worker do not import each other.
 - `backend.api` and `backend.grpc` → `backend.services` → `backend.dal` (layers); transports never import `dal`, models or the ORM.
 - `backend.services` never imports `backend.messaging`, transports, `fastapi`, `grpc` or `aio_pika`.
-- Workers have no database access (`common_lib.models`, `sqlalchemy` forbidden).
+- Workers have no database access (`common_lib.models`, `sqlalchemy` forbidden). One exception (ADR-0015): the indexer may read wrapped session keys from the `keystore` Redis through `KeyStore`.
 - `common_lib` outside `common_lib.models` imports no ORM, transport, broker, cache or HTTP client.
 
 ### TypeScript (`clients/`, `packages/`)

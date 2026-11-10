@@ -29,17 +29,22 @@ Written in Phase 1:
 | [0034](0034-local-stack-compose.md) | Local stack: compose networks, least privilege and memory limits | Proposed | §1, §2, §8 |
 | [0035](0035-schema-migrations.md) | Schema migrations: Alembic from the models, owner and runtime roles, a migrate job | Proposed | §1, §3.6, §3.8 |
 
+Written in Phase 2:
+
+| # | Title | Status | Brief |
+|---|---|---|---|
+| [0014](0014-auth-tokens-rate-limit.md) | Auth: admin-issued client credentials, short-lived access tokens, rotating refresh tokens, per-user rate limit | Proposed | §3.3, §3.4.3, §3.9 |
+| [0015](0015-session-keys-and-decryption.md) | Client-side crypto: AES-256-GCM per-session keys, X25519 key exchange, KEK-wrapped keys, decryption in the indexer | Proposed | §3.4.2, §3.4.3, §3.4.7, §3.7 |
+| [0016](0016-metadata-obfuscation.md) | Metadata obfuscation: keyed HMAC-SHA256 per repository for file ids, symbols and chunk hashes | Proposed | §3.3, §3.4.2, §3.7 |
+| [0018](0018-merkle-delta-sync.md) | Merkle tree over the directory structure, level-by-level delta sync | Proposed | §3.3, §3.4.2, §3.5 |
+| [0019](0019-secret-scrubbing.md) | Secret and PII scrubbing: path exclusion, then whole-file regex and entropy rules from one shared file, re-checked on the server | Proposed | §3.4.2, §3.7 |
+| [0020](0020-vector-store-pgvector.md) | Vector store: pgvector HNSW (cosine) behind `VectorStore`, iterative scans for repository filters | Proposed | §3.2, §3.4.6, §3.4.7 |
+
 Planned (written in the phase that makes the decision):
 
 | # | Title | Phase |
 |---|---|---|
-| 0014 | Auth: client credentials → short-lived access + refresh tokens; OIDC-ready | 2 |
-| 0015 | Client-side crypto: AES-256-GCM per-session keys, key exchange and rotation | 2 |
-| 0016 | Metadata obfuscation: keyed HMAC for file IDs and symbols | 2 |
 | 0017 | AST chunking with web-tree-sitter; grammar build and ABI pinning | 2 |
-| 0018 | Merkle tree design and O(log n) delta sync | 2 |
-| 0019 | Secret / PII scrubbing: regex + entropy rules | 2 |
-| 0020 | Vector store: pgvector HNSW behind `VectorStore` (turbopuffer later) | 2 |
 | 0021 | Cache-aside key design, normalisation and invalidation | 3 |
 | 0022 | Race-to-response thresholds and backup model | 3 |
 | 0023 | Circuit breaker and retry policies (decision tree) | 3 |
