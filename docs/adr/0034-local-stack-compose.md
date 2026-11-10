@@ -32,7 +32,7 @@ Chosen option: **1**.
   backend), `api` (internal: edge proxy and backend), `egress` (only the one-shot model
   download), `ui` (only Prometheus and Grafana, to publish their ports), `edge` (only
   the edge proxy, to publish the API port). Services join only the internal networks they
-  need when they arrive; workers never join `data`. A test fails if any other service
+  need when they arrive; workers never join `data`. ADR-0015 adds `keys` (internal: the non-evicting `keystore` Redis, joined only by the backend and the indexer). A test fails if any other service
   joins a network with outside access.
 - Ollama: `ollama-pull` runs its own short-lived Ollama server on `egress` to download
   the models into the volume, then exits; `ollama` starts after it, serves the volume
@@ -63,7 +63,10 @@ Chosen option: **1**.
   database; pgvector is created by the superuser at init; the password reaches psql
   through `\getenv`, never a command line. Redis: config rendered into a tmpfs
   (password, no persistence, `maxmemory 64mb` LRU); each service has its own ACL user (the
-  backend: read, write and connection commands only, keys under `xype:`, no channels).
+  backend: read, write and connection commands only, keys under `xype:`, and from Phase 2
+  the one revocation channel `xype:auth:revoked`, ADR-0014). It holds no key material:
+  session keys live in the separate `keystore` Redis (`noeviction`, network `keys`,
+  ADR-0015).
 - Backend and edge proxy: `pids_limit`, and `/tmp` tmpfs with `noexec,nosuid,nodev`.
 - Grafana: telemetry, update checks, sign-up, anonymous access, external snapshots,
   Gravatar and the plugin admin are off.

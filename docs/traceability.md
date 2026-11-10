@@ -11,22 +11,22 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3, the XYP
 | T5 | Background agent tasks (3.1, 3.5) | planned (5) | — | — |
 | T6 | Scale estimates at 10× headroom (3.2) | in progress | — | [scale-estimates.md](scale-estimates.md) |
 | T7 | REST `/api/v1` + gRPC bidi session stream (3.3) | in progress (contract done; servicer Phase 2) | ADR-0013 | `proto/xype/v1/`; checks: `npm run proto`, CI `buf breaking` |
-| T8 | Client credentials → access + refresh tokens, OIDC-ready (3.3) | planned (2) | ADR-0014 (planned) | — |
+| T8 | Client credentials → access + refresh tokens, OIDC-ready (3.3) | planned (2) | ADR-0014 | — |
 | T9 | IDE fork limited to branding/UX/bundling; AI in `xype-ai` (3.4.1) | planned (8) | ADR-0031 (planned) | rule: `.claude/rules/03-architecture.md` |
 | T10 | AST chunking with web-tree-sitter (3.4.2) | planned (2) | ADR-0017 (planned) | — |
 | T11 | Call-graph dependent injection (3.4.2) | planned (2) | — | schema: `chunk_edges` in `server/common_lib/models/index.py` |
-| T12 | Client Merkle tree + O(log n) delta sync, 10-min poll (3.4.2, 3.5) | planned (2) | ADR-0018 (planned) | — |
-| T13 | Client AES-256-GCM, metadata obfuscation (3.4.2) | planned (2) | ADR-0015, ADR-0016 (planned) | — |
-| T14 | Client secret/PII scrubbing before encryption (3.4.2, 3.7) | planned (2) | ADR-0019 (planned) | — |
+| T12 | Client Merkle tree + O(log n) delta sync, 10-min poll (3.4.2, 3.5) | planned (2) | ADR-0018 | flow: `docs/flows/merkle-sync.md` |
+| T13 | Client AES-256-GCM, metadata obfuscation (3.4.2) | planned (2) | ADR-0015, ADR-0016 | — |
+| T14 | Client secret/PII scrubbing before encryption (3.4.2, 3.7) | planned (2) | ADR-0019 | — |
 | T15 | Idle-time hashing: > 2 s debounce, 10–15% CPU cap (3.4.2) | planned (2) | — | — |
-| T16 | Gateway: auth, in-memory decrypt, rate limit 200/min, validation (3.4.3, 3.9) | planned (2) | — | — |
+| T16 | Gateway: auth, rate limit 200/min, validation; in-memory decrypt for completion and chat, indexing decrypted in the indexer (3.4.3, 3.9) | planned (2) | ADR-0014, ADR-0015 (deviation, Proposed) | — |
 | T17 | Orchestrator: templates, guardrails, retrieval, routing, post-processing, fallbacks (3.4.4) | planned (3, 4, 5) | — | — |
 | T18 | Intelligent router by task, prefs, budget, peak/off-peak (3.4.4, 5) | planned (3, 4, 5) | — | — |
-| T19 | Stateless embedding, plaintext dropped after embedding (3.4.7) | in progress (embedder done; indexer Phase 2) | ADR-0002 | `server/common_lib/secret_bytes.py`, `server/common_lib/embeddings/`; tests: `server/tests/unit/common_lib/test_embeddings.py`, `server/tests/integration/test_ollama_embedder.py` |
-| T20 | Postgres + pgvector HNSW behind `VectorStore` (3.4.6, 3.2) | in progress (schema done; `VectorStore` Phase 2) | ADR-0020 (planned), ADR-0035 | schema: `server/common_lib/models/index.py` (HNSW cosine, `vector(1024)`), `server/migrations/versions/0001_baseline_schema.py`; `VectorStore` in Phase 2 |
+| T19 | Stateless embedding, plaintext dropped after embedding (3.4.7) | in progress (embedder done; indexer Phase 2) | ADR-0002, ADR-0015 | `docs/privacy.md`, `server/common_lib/secret_bytes.py`, `server/common_lib/embeddings/`; tests: `server/tests/unit/common_lib/test_embeddings.py`, `server/tests/integration/test_ollama_embedder.py` |
+| T20 | Postgres + pgvector HNSW behind `VectorStore` (3.4.6, 3.2) | in progress (schema done; `VectorStore` Phase 2) | ADR-0020, ADR-0035 | schema: `server/common_lib/models/index.py` (HNSW cosine, `vector(1024)`), `server/migrations/versions/0001_baseline_schema.py`; `VectorStore` in Phase 2 |
 | T21 | Data model incl. XYPE tables, no plaintext code column (3.6) | implemented | ADR-0035 | `server/common_lib/models/`, `server/migrations/`; tests: `server/tests/integration/test_migrations.py` |
 | T22 | Prompt templates as versioned files (3.6, 2) | planned (4) | ADR-0026 (planned) | rule: `.claude/rules/10-llm-prompts.md` |
-| T23 | Privacy: in-memory decrypt, no plaintext at rest, memory hygiene, no-logging (3.7) | in progress (no-logging done; decrypt and memory hygiene in Phase 2) | ADR-0011 | `server/common_lib/logging_config.py`, `server/backend/api/middleware.py`; tests: `server/tests/unit/backend/test_privacy.py` |
+| T23 | Privacy: in-memory decrypt, no plaintext at rest, memory hygiene, no-logging (3.7) | in progress (no-logging done; decrypt and memory hygiene in Phase 2) | ADR-0011, ADR-0015 | `server/common_lib/logging_config.py`, `server/backend/api/middleware.py`, `docs/privacy.md`; tests: `server/tests/unit/backend/test_privacy.py` |
 | T24 | Privacy test suite (3.7) | planned (2) | — | — |
 | T25 | Cache-aside Redis with specified key designs + embedding cache (3.8, 5) | planned (3) | ADR-0021 (planned) | — |
 | T26 | Normalised cache keys (3.8) | planned (3) | ADR-0021 (planned) | — |
@@ -54,13 +54,13 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3, the XYP
 | T48 | Minimized code transfer: only the context a request needs leaves the client (3.4.2, 3.7) | planned (2) | — | rule: `.claude/rules/07-security-privacy.md` |
 | T49 | Local client cache for short-term completion recall (3.4.2) | planned (3) | — | — |
 | T50 | Encryption in transit (TLS, local dev CA) and at rest (3.7) | planned (2) | — | follow-ups (TLS; at rest): `docs/plan.md` §3a |
-| T51 | Model-inversion caveat documented; key rotation and scoped access (3.7) | planned (2) | ADR-0015, ADR-0016 (planned) | risk R6: `docs/plan.md` §4 |
+| T51 | Model-inversion caveat documented; key rotation and scoped access (3.7) | in progress (caveat documented; rotation in Phase 2) | ADR-0015, ADR-0016 | `docs/privacy.md`; risk R6: `docs/plan.md` §4 |
 | T52 | Agent tools that touch code run on the client via `ToolExecutor`, with approval rules (3.5) | planned (5) | ADR-0027 (planned) | — |
-| T53 | Sequence diagrams for the five flows in `docs/` (3.5) | planned (2, 3, 4, 5) | — | — |
+| T53 | Sequence diagrams for the five flows in `docs/` (3.5) | in progress (context awareness, Merkle sync) | ADR-0015, ADR-0018 | `docs/flows/context-awareness.md`, `docs/flows/merkle-sync.md` |
 | T54 | Templates as first-class context, "New project from template" wizard, prefer template patterns (4.1) | planned (6) | — | — |
 | T55 | Repo and org rules packs injected as the stable prompt prefix (4.2, 5) | planned (6) | ADR-0026 (planned) | — |
 | T56 | Company OS connector behind `ConnectorClient`, fake with fixtures until the API is shared (4.3) | planned (6) | ADR-0029 (planned) | — |
 | T57 | Jira connector: my tickets, open, "Implement this ticket", status comment and transition (4.4) | planned (6) | ADR-0029 (planned) | — |
 | T58 | Scope: only registered XYPE repos and templates, no web search in v1 (4.5) | planned (2, 6) | — | rule: `.claude/rules/03-architecture.md` |
-| T59 | Chat messages persisted encrypted (3.5) | planned (4) | ADR-0015 (planned) | schema: `chat_messages` in `server/common_lib/models/chat.py` |
+| T59 | Chat messages persisted encrypted (3.5) | planned (4) | — | schema: `chat_messages` in `server/common_lib/models/chat.py` |
 | T60 | Scheduled jobs: index drift checks, eval runs, off-peak batches (3.4.5) | planned (5, 7) | ADR-0028 (planned) | — |

@@ -17,6 +17,7 @@ Answers received on 2026-11-07 are recorded inline. Items under **Open** still n
 | Q6a | Repo visibility | **Public** | Secrets hygiene is critical: secret scanning in pre-commit and CI from the first commit; no client code in fixtures. |
 | Q9 | Paid LLM route | **OpenRouter** (if possible) | ADR-0005 rewritten: one OpenAI-compatible adapter, OpenRouter profile with ZDR + provider allow-list. |
 | Q10 | Embedder dims | **1024** | First migration uses `vector(1024)`. |
+| Q11 | Auth model | **Admin creates client credentials per developer** (CLI first, admin dashboard in Phase 7); SSO later (2026-11-10) | Short-lived access + refresh tokens, OIDC-ready issuer seam (ADR-0014). |
 | Q12 | Matt Pocock skills | **Vendored** after review, per the approved Phase 1 plan; vendored in PR #1 on 2026-11-08 (no `npx` download) | Copies pinned to one upstream commit, with the MIT notice in `.claude/skills/THIRD_PARTY_NOTICES.md`. |
 | Q16 | Git identity | `user.name = yordan-gergov01`, `user.email = yordansoftskills@gmail.com` | Set in this repo's local git config. |
 
@@ -26,5 +27,4 @@ Answers received on 2026-11-07 are recorded inline. Items under **Open** still n
 |---|---|---|---|
 | Q1a | Company OS REST API: base URL, auth (API key / OAuth client), and an OpenAPI spec or example responses for project, client and team? | Real adapter and contract fixtures. | Phase 6 |
 | Q7 | Jira Cloud or Data Center? Project key(s) and transition names for "In progress" / "In review"? | Jira adapter and the "Implement ticket" flow. | Phase 6 |
-| Q11 | Auth: client credentials created per developer by an admin in the admin dashboard? Any SSO provider planned (Google Workspace, Entra ID)? | Gateway auth, OIDC readiness. | Phase 2 |
 | Q13 | Brand assets: XYPE logo/icon files (SVG), or take them from xype.io? | Design tokens (Phase 4), branding (Phase 8). | Phase 4 |

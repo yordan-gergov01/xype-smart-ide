@@ -22,7 +22,8 @@ Conventions:
 | tasks | `TaskQueue`, `TaskHandler`, `CostScheduler` | `backend/services/tasks/` (Protocol), `backend/messaging/` (RabbitMQ) |
 | router | `ModelRouter` | `backend/services/router/` |
 | prompts | `PromptRegistry` | `backend/services/prompts/`; templates as files in `server/prompts/` |
-| security | `CryptoBox`, `SecretScrubber`, `hmac_id` | `backend/services/security/`; client side in `clients/xype-ai` |
+| security | `CryptoBox`, `SecretScrubber`, `KeyStore`, `hmac_id` | `backend/services/security/`; `KeyStore` adapter also in `indexer/`; client side in `clients/xype-ai` |
+| auth | `CredentialVerifier`, `Principal` | `backend/services/auth/` |
 | connectors | `ConnectorClient` | `backend/services/connectors/` (Protocols), adapters wired in `backend/main.py` |
 | observability | `Metrics` | `common_lib` (used by every service); added when services emit metrics; HTTP metrics live in the transport layer (ADR-0011) |
 | health | `DependencyProbe` | `backend/services/health/` (implemented): `name`, `async check()` raising `DependencyUnavailableError`; adapters in `backend/dal/health/`, `backend/messaging/health.py` |
@@ -138,7 +139,7 @@ class Embedder(Protocol):
 ```python
 @dataclass(frozen=True, slots=True)
 class VectorRecord:
-    chunk: ChunkRef
+    chunk: ChunkRef          # carries leaf_node_id, the upsert key (ADR-0020)
     vector: Sequence[float]
     model: ModelRef
 
@@ -150,7 +151,7 @@ class SearchHit:
 class VectorStore(Protocol):
     """Adapters: pgvector (HNSW); turbopuffer later."""
     async def upsert(self, records: Sequence[VectorRecord]) -> None: ...
-    async def delete(self, repository_id: UUID, chunk_hashes: Sequence[str]) -> None: ...
+    async def delete(self, repository_id: UUID, leaf_node_ids: Sequence[str]) -> None: ...
     async def search(
         self, vector: Sequence[float], *, repository_ids: Sequence[UUID], k: int,
         min_score: float = 0.0,
@@ -288,7 +289,34 @@ class SecretScrubber(Protocol):
     def scrub(self, text: str) -> "ScrubResult": ...      # text with <SECRET_REMOVED>, findings count
 ```
 
-Metadata obfuscation is a plain function in `security` — `hmac_id(key_id: str, value: str) -> str` — not an interface: one implementation, no external dependency.
+Metadata obfuscation is a plain function in `security` — `hmac_id(repo_key: SecretBytes, domain: str, *fields: str) -> str` with length-prefixed fields (ADR-0016) — not an interface: one implementation, no external dependency.
+
+```python
+class KeyStore(Protocol):
+    """Session keys wrapped under the KEK in the `keystore` Redis (ADR-0015)."""
+    async def put(self, key_id: str, user_id: UUID, key: SecretBytes, *, ttl_s: int) -> None: ...
+    async def get(self, key_id: str) -> SecretBytes: ...      # unwrapped; caller wipes
+    async def revoke_user(self, user_id: UUID) -> None: ...
+    async def revoke_family(self, family_id: UUID) -> None: ...
+    async def advance_nonce(self, key_id: str, direction: str, counter: int) -> None:
+        """Refuses a counter that is not above the highest seen."""
+
+@dataclass(frozen=True, slots=True)
+class Principal:
+    user_id: UUID
+    team_id: UUID
+    role: str
+
+@dataclass(frozen=True, slots=True)
+class Credential:
+    kind: str                # "client_credentials" now, "oidc_id_token" later
+    client_id: str
+    secret: SecretBytes
+
+class CredentialVerifier(Protocol):
+    """Client credentials now, OIDC ID tokens later (ADR-0014)."""
+    async def verify(self, credential: Credential) -> Principal: ...
+```
 
 ## connectors
 
@@ -390,6 +418,8 @@ Client-side context-engine interfaces (TypeScript, Phase 2): `Chunker`, `CallGra
 | PromptRegistry | ✅ | prompts |
 | CryptoBox | ✅ | security |
 | SecretScrubber | ✅ | security |
+| KeyStore | ✅ | security |
+| CredentialVerifier | ✅ | auth |
 | MerkleIndex | ✅ | indexing |
 | ConnectorClient (Company OS, Jira, templates) | ✅ | connectors |
 | ToolExecutor | ✅ (TS) | clients/xype-ai |
