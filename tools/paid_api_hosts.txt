@@ -1,6 +1,7 @@
 # Paid LLM / embedding API endpoints. Single source of truth for:
 #   - .claude/hooks/pre-bash-guard.mjs (blocks shell network calls)
 #   - tools/check_paid_api.py (CI/pre-commit: no paid endpoint in code or config)
+#   - server/tests/architecture/test_network_guard.py (the test network guard refuses each host)
 #   - .claude/settings.json WebFetch denies (kept in sync by .claude/hooks/hooks.test.mjs)
 # One entry per line: a host, or host/path prefix when the host also serves docs.
 api.deepseek.com

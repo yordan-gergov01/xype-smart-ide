@@ -24,6 +24,7 @@ Written in Phase 1:
 | [0009](0009-no-di-framework.md) | No DI framework: constructor injection in composition roots | Proposed | §2 |
 | [0010](0010-configuration.md) | Configuration via pydantic-settings, environment only | Proposed | §1, §2 |
 | [0011](0011-observability.md) | Observability: structlog JSON, OpenTelemetry, Prometheus; metadata only | Proposed | §1, §3.12 |
+| [0012](0012-paid-api-guard.md) | Paid-API guard: network guard in tests, hooks and CI checks; dependency scan and SBOM | Proposed | §0, §1, §3.7, §5 |
 | [0013](0013-grpc-session-stream.md) | Single bidirectional gRPC `Session` stream with oneof envelopes | Proposed | §3.3, §3.5 |
 | [0034](0034-local-stack-compose.md) | Local stack: compose networks, least privilege and memory limits | Proposed | §1, §2, §8 |
 | [0035](0035-schema-migrations.md) | Schema migrations: Alembic from the models, owner and runtime roles, a migrate job | Proposed | §1, §3.6, §3.8 |
@@ -32,7 +33,6 @@ Planned (written in the phase that makes the decision):
 
 | # | Title | Phase |
 |---|---|---|
-| 0012 | Paid-API guard: network guard in tests, hook, CI check | 1 |
 | 0014 | Auth: client credentials → short-lived access + refresh tokens; OIDC-ready | 2 |
 | 0015 | Client-side crypto: AES-256-GCM per-session keys, key exchange and rotation | 2 |
 | 0016 | Metadata obfuscation: keyed HMAC for file IDs and symbols | 2 |

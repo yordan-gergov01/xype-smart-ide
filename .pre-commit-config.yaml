@@ -54,6 +54,12 @@ repos:
         entry: python tools/check_paid_api.py
         language: python
         types: [text]
+      - id: paid-config-guard
+        name: no paid LLM provider enabled in tracked configuration
+        entry: python tools/check_paid_config.py
+        language: python
+        pass_filenames: false
+        files: (\.env\.example|^deploy/.*\.ya?ml|^\.github/workflows/.*\.ya?ml)$
       - id: commit-msg
         name: conventional commit message
         entry: python tools/check_commit_msg.py
