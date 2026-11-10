@@ -19,6 +19,8 @@ pgvector
 redis
 # RabbitMQ client; the readiness probe connects with it.
 aio-pika
+# HTTP client of the embedder (Ollama, TEI) and later the connectors.
+httpx
 # Metrics and traces (ADR-0011).
 prometheus-client
 opentelemetry-api

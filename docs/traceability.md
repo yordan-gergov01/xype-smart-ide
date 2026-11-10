@@ -22,7 +22,7 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3 (plus th
 | T16 | Gateway: auth, in-memory decrypt, rate limit 200/min, validation (3.4.3, 3.9) | planned (2) | — | — |
 | T17 | Orchestrator: templates, guardrails, retrieval, routing, post-processing, fallbacks (3.4.4) | planned (3–5) | — | — |
 | T18 | Intelligent router by task, prefs, budget, peak/off-peak (3.4.4, 5) | planned (3–5) | — | — |
-| T19 | Stateless embedding, plaintext dropped after embedding (3.4.7) | planned (2) | ADR-0002 | — |
+| T19 | Stateless embedding, plaintext dropped after embedding (3.4.7) | in progress (embedder done; indexer Phase 2) | ADR-0002 | `server/common_lib/secret_bytes.py`, `server/common_lib/embeddings/`; tests: `server/tests/unit/common_lib/test_embeddings.py`, `server/tests/integration/test_ollama_embedder.py` |
 | T20 | Postgres + pgvector HNSW behind `VectorStore` (3.4.6, 3.2) | planned (1–2) | ADR-0020 (planned), ADR-0035 | schema: `server/common_lib/models/index.py` (HNSW cosine, `vector(1024)`), `server/migrations/versions/0001_baseline_schema.py`; `VectorStore` in Phase 2 |
 | T21 | Data model incl. XYPE tables, no plaintext code column (3.6) | implemented | ADR-0035 | `server/common_lib/models/`, `server/migrations/`; tests: `server/tests/integration/test_migrations.py` |
 | T22 | Prompt templates as versioned files (3.6, 2) | planned (4) | ADR-0026 (planned) | rule: `.claude/rules/10-llm-prompts.md` |
@@ -50,4 +50,4 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3 (plus th
 | T44 | Prefix-cache-friendly prompt ordering (5) | planned (4) | ADR-0026 (planned) | rule: `.claude/rules/10-llm-prompts.md` |
 | T45 | `CostScheduler` off-peak deferral (5) | planned (5) | ADR-0028 (planned), ADR-0005 | — |
 | T46 | Budgets, degrade to cheaper models, hard kill switch (5) | planned (5) | — | — |
-| T47 | Paid models only via disabled adapter + fixtures; free models in dev/CI (0, 5) | planned (1) | ADR-0005, ADR-0012 (planned) | hook: `.claude/hooks/pre-bash-guard.mjs` |
+| T47 | Paid models only via disabled adapter + fixtures; free models in dev/CI (0, 5) | in progress (mock provider done) | ADR-0005, ADR-0012 (planned) | `server/llm/providers/mock.py`; hook: `.claude/hooks/pre-bash-guard.mjs` |

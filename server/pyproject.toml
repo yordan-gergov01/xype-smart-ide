@@ -122,11 +122,23 @@ name = "The shared library outside models imports no web, transport, broker, cac
 type = "forbidden"
 source_modules = [
     "common_lib.clock", "common_lib.correlation", "common_lib.domain", "common_lib.errors",
-    "common_lib.llm", "common_lib.logging_config", "common_lib.settings", "common_lib.tracing",
+    "common_lib.llm", "common_lib.logging_config", "common_lib.secret_bytes", "common_lib.settings",
+    "common_lib.tracing",
 ]
 forbidden_modules = [
+    "backend", "llm", "common_lib.embeddings", "common_lib.models", "fastapi", "starlette",
+    "grpc", "aio_pika", "redis", "httpx", "sqlalchemy", "pgvector",
+]
+
+# The embedder is shared by the backend (queries) and the indexer (documents); it talks
+# to the model server over HTTP and to nothing else.
+[[tool.importlinter.contracts]]
+name = "Embeddings use only an HTTP client"
+type = "forbidden"
+source_modules = ["common_lib.embeddings"]
+forbidden_modules = [
     "backend", "llm", "common_lib.models", "fastapi", "starlette", "grpc", "aio_pika",
-    "redis", "httpx", "sqlalchemy", "pgvector",
+    "redis", "sqlalchemy", "asyncpg", "pgvector",
 ]
 
 [[tool.importlinter.contracts]]

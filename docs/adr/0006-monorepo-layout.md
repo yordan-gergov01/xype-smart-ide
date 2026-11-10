@@ -37,7 +37,7 @@ Chosen option: **1**, because the owner chose it and it keeps XYPE projects unif
 | `backend/main.py` | Composition root of the backend |
 | `llm/` | LLM worker: consumes jobs from RabbitMQ, calls `llm/providers/` (mock, ollama, openai_compatible), publishes results. No database access |
 | `indexer/` | Embedding and indexing worker (added in Phase 2) |
-| `common_lib/` | Imported by every service: errors, domain types, settings base, logging, request ids, ORM models, schemas, the message contract |
+| `common_lib/` | Imported by every service: errors, domain types, settings base, logging, request ids, ORM models, schemas, the message contract, LLM value types, and the embedder (the only `common_lib` code with an HTTP client, used by the backend and the indexer) |
 | `migrations/` | Alembic revisions |
 | `prompts/`, `evals/` | Versioned prompt templates (data) and the eval harness |
 | `tests/unit/<package>/`, `tests/integration/`, `tests/architecture/` | Tests; the architecture tests run the import-linter contracts |

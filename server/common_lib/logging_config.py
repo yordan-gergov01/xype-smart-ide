@@ -104,7 +104,11 @@ def _redact_value(value: Any) -> Any:  # reason: log values have any type
 
 
 def exception_without_message(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
-    """Turn `exc_info` into the exception type and its frames; drop the message."""
+    """Turn `exc_info` into the exception type and its frames; drop the message.
+
+    Never switch to a renderer that captures frame locals (structlog `dict_tracebacks`,
+    `show_locals`): locals hold plaintext code (common_lib.secret_bytes).
+    """
     exc_info = event_dict.pop("exc_info", None)
     if exc_info is True:
         exc_info = sys.exc_info()
