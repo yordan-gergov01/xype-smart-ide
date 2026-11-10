@@ -14,8 +14,8 @@
     "format": "prettier --write . --ignore-path .gitignore --ignore-path .prettierignore",
     "format:check": "prettier --check . --ignore-path .gitignore --ignore-path .prettierignore",
     "lint": "eslint . --max-warnings=0",
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test .claude/hooks/hooks.test.mjs",
+    "typecheck": "tsc -p tsconfig.json && tsc -p clients/xype-ai",
+    "test": "node --test .claude/hooks/hooks.test.mjs && npm test --workspaces --if-present",
     "dup": "jscpd",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run dup && npm run proto",
     "proto": "buf lint proto && buf format -d --exit-code proto"

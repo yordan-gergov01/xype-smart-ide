@@ -13,7 +13,7 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3, the XYP
 | T7 | REST `/api/v1` + gRPC bidi session stream (3.3) | in progress (contract done; servicer Phase 2) | ADR-0013 | `proto/xype/v1/`; checks: `npm run proto`, CI `buf breaking` |
 | T8 | Client credentials → access + refresh tokens, OIDC-ready (3.3) | planned (2) | ADR-0014 | — |
 | T9 | IDE fork limited to branding/UX/bundling; AI in `xype-ai` (3.4.1) | planned (8) | ADR-0031 (planned) | rule: `.claude/rules/03-architecture.md` |
-| T10 | AST chunking with web-tree-sitter (3.4.2) | planned (2) | ADR-0017 (planned) | — |
+| T10 | AST chunking with web-tree-sitter (3.4.2) | in progress (grammars for all 7 languages load; chunking in slice 10) | ADR-0017 | `clients/xype-ai/grammars.json`, `clients/xype-ai/scripts/build-grammars.mjs`, `clients/xype-ai/src/context/grammars.ts`; tests: `clients/xype-ai/src/context/grammars.test.ts` |
 | T11 | Call-graph dependent injection (3.4.2) | planned (2) | — | schema: `chunk_edges` in `server/common_lib/models/index.py` |
 | T12 | Client Merkle tree + O(log n) delta sync, 10-min poll (3.4.2, 3.5) | planned (2) | ADR-0018 | flow: `docs/flows/merkle-sync.md` |
 | T13 | Client AES-256-GCM, metadata obfuscation (3.4.2) | planned (2) | ADR-0015, ADR-0016 | — |

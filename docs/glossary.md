@@ -102,6 +102,8 @@ _Avoid_: package (means a Python distribution here)
 
 **Mock provider**: the deterministic, free `LLMProvider` used in development, tests, CI and evals; it never calls a model.
 
+**Grammar**: the WebAssembly parser for one language that web-tree-sitter loads to chunk code by its syntax tree (ADR-0017).
+
 **Network guard**: the test-session guard that refuses every connection from the test process to a host other than this machine (ADR-0012).
 
 **SecretBytes**: a buffer of plaintext code that never prints its content and is wiped right after use.
