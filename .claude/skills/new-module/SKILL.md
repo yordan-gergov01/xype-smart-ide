@@ -17,16 +17,16 @@ server/
 │   │   ├── __init__.py                       # re-exports the public interface, types, errors
 │   │   ├── interface.py                      # typing.Protocol(s) it needs and offers
 │   │   ├── errors.py                         # <Feature>Error(XypeError) + specific errors
-│   │   ├── fake.py                           # in-memory adapters of its Protocols
 │   │   └── service.py                        # business rules + build_<feature>_service()
 │   └── dal/<feature>/repository.py           # Postgres/Redis access; returns plain records
 └── tests/
-    ├── unit/backend/<feature>/contract.py    # shared suite: def run_contract(make_impl) …
+    ├── support/<feature>.py                  # in-memory fakes (importable as `support`)
+    ├── support/contracts/<feature>.py        # shared contract suite: assert_* functions
     ├── unit/backend/<feature>/test_*.py      # service rules with fakes; contract on the fake
     └── integration/test_<feature>_*.py       # contract on the real adapter (@pytest.mark.integration)
 ```
 
-Workers (`llm/`, `indexer/`) follow the same idea: `providers/` or adapters behind a Protocol, `main.py` as composition root, no database access.
+Workers (`llm/`, `indexer/`) follow the same idea: `providers/` or adapters behind a Protocol, `main.py` as composition root, no database access. A production stand-in that is configured, not just used in tests (`MockLLMProvider`), lives with the adapters; test-only fakes live in `tests/support`.
 
 Steps:
 1. Check `docs/interfaces.md` — the interface and its location may already be specified; reuse them exactly.

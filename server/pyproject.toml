@@ -11,7 +11,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = []
 
 [tool.setuptools.packages.find]
-include = ["common_lib*", "backend*"]
+include = ["common_lib*", "backend*", "llm*"]
 
 [tool.ruff]
 target-version = "py312"
@@ -64,13 +64,13 @@ max-statements = 40
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["common_lib", "backend"]
+known-first-party = ["common_lib", "backend", "llm"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 warn_unreachable = true
-files = ["common_lib", "backend", "migrations", "tests"]
+files = ["common_lib", "backend", "llm", "migrations", "tests"]
 # Test folders have no __init__.py; name modules by their path so equally named
 # test files in different folders do not clash.
 explicit_package_bases = true
@@ -98,17 +98,19 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["common_lib", "backend"]
+source = ["common_lib", "backend", "llm"]
 
 [tool.coverage.report]
 fail_under = 85
 show_missing = true
 skip_covered = true
+# Protocol method bodies and type-checking-only imports never run.
+exclude_also = ['^\s*\.\.\.$', 'if TYPE_CHECKING:']
 
 # Contracts are added once the modules they name exist; a contract naming a
 # missing module fails.
 [tool.importlinter]
-root_packages = ["common_lib", "backend"]
+root_packages = ["common_lib", "backend", "llm"]
 # Needed so contracts can forbid third-party packages.
 include_external_packages = true
 
@@ -119,19 +121,46 @@ include_external_packages = true
 name = "The shared library outside models imports no web, transport, broker, cache, HTTP or ORM code"
 type = "forbidden"
 source_modules = [
-    "common_lib.correlation", "common_lib.domain", "common_lib.errors",
-    "common_lib.logging_config", "common_lib.settings", "common_lib.tracing",
+    "common_lib.clock", "common_lib.correlation", "common_lib.domain", "common_lib.errors",
+    "common_lib.llm", "common_lib.logging_config", "common_lib.secret_bytes", "common_lib.settings",
+    "common_lib.tracing",
 ]
 forbidden_modules = [
-    "backend", "common_lib.models", "fastapi", "starlette", "grpc", "aio_pika", "redis",
-    "httpx", "sqlalchemy", "pgvector",
+    "backend", "llm", "common_lib.embeddings", "common_lib.models", "fastapi", "starlette",
+    "grpc", "aio_pika", "redis", "httpx", "sqlalchemy", "pgvector",
+]
+
+# The embedder is shared by the backend (queries) and the indexer (documents); it talks
+# to the model server over HTTP and to nothing else.
+[[tool.importlinter.contracts]]
+name = "Embeddings use only an HTTP client"
+type = "forbidden"
+source_modules = ["common_lib.embeddings"]
+forbidden_modules = [
+    "backend", "llm", "common_lib.models", "fastapi", "starlette", "grpc", "aio_pika",
+    "redis", "sqlalchemy", "asyncpg", "pgvector",
+]
+
+[[tool.importlinter.contracts]]
+name = "The backend and the LLM worker do not import each other"
+type = "independence"
+modules = ["backend", "llm"]
+
+[[tool.importlinter.contracts]]
+name = "The LLM worker has no database or cache access"
+type = "forbidden"
+source_modules = ["llm"]
+forbidden_modules = [
+    "common_lib.models", "sqlalchemy", "asyncpg", "pgvector", "redis", "fastapi", "starlette",
 ]
 
 [[tool.importlinter.contracts]]
 name = "The models know no service, transport, broker or cache"
 type = "forbidden"
 source_modules = ["common_lib.models"]
-forbidden_modules = ["backend", "fastapi", "starlette", "grpc", "aio_pika", "redis", "httpx"]
+forbidden_modules = [
+    "backend", "llm", "fastapi", "starlette", "grpc", "aio_pika", "redis", "httpx",
+]
 
 [[tool.importlinter.contracts]]
 name = "Backend layers depend downwards only: api -> services -> dal"

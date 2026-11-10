@@ -34,6 +34,7 @@ Serving, behind the same `Embedder` interface:
 - Default dimension **1024** (`EMBEDDER_DIM`), MRL truncation to 768 or 512 allowed by config; the migration reads the value at creation time. Changing it later means a full re-embed.
 - Queries are embedded with the instruction prefix `Instruct: <task>\nQuery:<query>`; documents (code chunks) without it. The task string is a versioned prompt file.
 - The `Embedder` interface returns the model ID + version, which are part of the embedding-cache key.
+- Transport: the embedder sends plaintext chunks to the model server. Plain http is accepted only on the compose-internal `models` network; any server outside it (hosted TEI) must be reached over https with the dev or production CA (TLS follow-up in `docs/plan.md`).
 - Fallback for very weak machines: the same model at 768 dims, or the Ollama `/api/embed` adapter. Both stay behind `Embedder`.
 
 ### Consequences

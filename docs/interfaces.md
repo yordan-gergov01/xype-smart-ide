@@ -13,13 +13,13 @@ Conventions:
 | Section | Protocol(s) | Location |
 |---|---|---|
 | Shared types | `RequestContext`, `ChunkRef`, `ModelRef`, `XypeError`, `DependencyUnavailableError` | `server/common_lib/domain.py`, `common_lib/errors.py` (implemented) |
-| Shared types | `SecretBytes` | `server/common_lib` (with the first user, Phase 2) |
-| llm | `LLMProvider` + resilience wrappers | `server/llm/providers/` (worker); the backend reaches it through RabbitMQ and a small `services` Protocol |
-| embeddings | `Embedder` | Protocol in `common_lib`; adapters chosen in slice 6 (used by `indexer` and by retrieval in `backend`) |
+| Shared types | `SecretBytes`, `Clock` (+ `SystemClock`) | `server/common_lib/secret_bytes.py`, `common_lib/clock.py` (implemented; `FakeClock` in `tests/support`) |
+| llm | `LLMProvider` + resilience wrappers | Value types and errors in `server/common_lib/llm.py`; Protocol and `MockLLMProvider` in `server/llm/providers/` (implemented, contract in `tests/support/contracts/llm.py`); ollama, vllm, openai_compatible and the wrappers in Phase 3; the backend reaches the worker through RabbitMQ |
+| embeddings | `Embedder` | `server/common_lib/embeddings/` (implemented): Protocol and `OllamaEmbedder`; `FakeEmbedder` and the contract in `tests/support`; TEI for hosting later. Used by the indexer (documents) and the backend (queries) |
 | retrieval | `VectorStore`, `ChunkRepository` | `backend/services/retrieval/` (Protocols), `backend/dal/retrieval/` (pgvector) |
 | indexing | `MerkleIndex` | `server/indexer/` + `backend/dal/indexing/` |
 | cache | `Cache`, `SemanticCache` | `backend/services/cache/` (Protocol, key builders), `backend/dal/cache/` (Redis) |
-| tasks | `TaskQueue`, `TaskHandler`, `Clock`, `CostScheduler` | `backend/services/tasks/` (Protocol), `backend/messaging/` (RabbitMQ) |
+| tasks | `TaskQueue`, `TaskHandler`, `CostScheduler` | `backend/services/tasks/` (Protocol), `backend/messaging/` (RabbitMQ) |
 | router | `ModelRouter` | `backend/services/router/` |
 | prompts | `PromptRegistry` | `backend/services/prompts/`; templates as files in `server/prompts/` |
 | security | `CryptoBox`, `SecretScrubber`, `hmac_id` | `backend/services/security/`; client side in `clients/xype-ai` |
@@ -27,6 +27,8 @@ Conventions:
 | observability | `Metrics` | `common_lib` (used by every service); added when services emit metrics; HTTP metrics live in the transport layer (ADR-0011) |
 | health | `DependencyProbe` | `backend/services/health/` (implemented): `name`, `async check()` raising `DependencyUnavailableError`; adapters in `backend/dal/health/`, `backend/messaging/health.py` |
 | agents | agent loop, `ClientToolPort` | `backend/services/agents/`; `ToolExecutor` in `clients/xype-ai` |
+
+Interfaces without a status above arrive with the phase that gives them a real adapter (owner's decision, Phase 1 slice 6): retrieval, indexing and security in Phase 2, cache in Phase 3, prompts and router in Phase 4, tasks and agents in Phase 5, connectors in Phase 6 (their API specs are open questions Q1a and Q7), `Metrics` with the first service metrics (ADR-0011). Each then gets its Protocol, a fake in `tests/support`, a real adapter and one shared contract suite in `tests/support/contracts`.
 
 ## Shared domain types (sketch)
 

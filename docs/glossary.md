@@ -75,4 +75,16 @@ _Avoid_: package (means a Python distribution here)
 
 **Runtime role**: the database role the backend connects with; it reads and writes rows but cannot change the schema.
 
+**Embedder**: turns text into a vector; documents (code chunks) are embedded as they are, queries with an instruction.
+
+**Instruction**: the retrieval task put in front of a query before it is embedded (`Instruct: …\nQuery:…`); a versioned prompt.
+
+**Clock**: the seam that tells services the current time, so tests control it.
+
+**Contract suite**: one set of tests that a fake and every real adapter of an interface must all pass (`server/tests/support/contracts`).
+
+**Mock provider**: the deterministic, free `LLMProvider` used in development, tests, CI and evals; it never calls a model.
+
+**SecretBytes**: a buffer of plaintext code that never prints its content and is wiped right after use.
+
 **Edge proxy**: the only container with a published API port; it forwards to the backend, which has no route outside the stack.

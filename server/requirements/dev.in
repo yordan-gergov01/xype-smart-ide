@@ -13,8 +13,6 @@ pytest
 pytest-asyncio
 pytest-cov
 import-linter
-# ASGI test client for the API tests.
-httpx
 # Real Postgres, Redis and RabbitMQ for the integration tests.
 testcontainers
 pre-commit
