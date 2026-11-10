@@ -248,7 +248,7 @@ def _iocp_proactor() -> Any:  # reason: Any - private Windows-only class
         from asyncio import windows_events  # noqa: PLC0415 - exists on Windows only
     except ImportError:
         return None
-    return windows_events.IocpProactor
+    return windows_events.IocpProactor  # type: ignore[attr-defined,unused-ignore]  # Windows only
 
 
 # reason: Any - each guard keeps the signature of the function it replaces.
