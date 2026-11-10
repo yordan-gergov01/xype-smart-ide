@@ -19,6 +19,9 @@ OpenTelemetry collector in the `observability` profile. Design: ADR-0034, ADR-00
   workers (scale-estimates §6); a unit test keeps it that way.
 - About 6 GB of disk: the Ollama image and the two models (≈ 1.6 GB download on the
   first start).
+- For the `xype-ai` grammar tests: `npm run grammars -w xype-ai` once. The first run
+  downloads tree-sitter-cli's toolchain (wasi-sdk and binaryen, ≈ 700 MB) into
+  `%LOCALAPPDATA%\tree-sitter` (`~/.cache/tree-sitter` on Linux); later runs skip grammars that are up to date (ADR-0017).
 
 ## Start
 

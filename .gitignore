@@ -36,6 +36,9 @@ coverage/
 *.tsbuildinfo
 out/
 .vite/
+# web-tree-sitter grammars built from pinned sources (ADR-0017)
+clients/xype-ai/grammars/
+clients/xype-ai/.grammar-work/
 
 # Generated code (protobuf stubs are generated in CI and locally)
 gen/

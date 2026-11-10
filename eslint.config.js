@@ -13,7 +13,15 @@ const limits = {
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules', '**/dist', '**/coverage', 'server', 'fork/vscode'],
+    ignores: [
+      '**/node_modules',
+      '**/dist',
+      '**/coverage',
+      'server',
+      'fork/vscode',
+      'clients/xype-ai/grammars',
+      'clients/xype-ai/.grammar-work',
+    ],
   },
   {
     files: ['**/*.{ts,tsx}'],
@@ -33,6 +41,17 @@ export default tseslint.config(
     // Claude Code hooks talk to the harness through stdout and stderr.
     files: ['.claude/hooks/**/*.mjs'],
     rules: { 'no-console': 'off' },
+  },
+  {
+    // Module boundaries (rule 03, ADR-0008): code outside a folder is imported through
+    // the `@/` alias, never by climbing out with `../`.
+    files: ['clients/*/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['../*'], message: 'Import across folders through the @/ alias.' }] },
+      ],
+    },
   },
   {
     files: ['**/*.test.{ts,tsx,mjs}'],

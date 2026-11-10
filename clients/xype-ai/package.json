@@ -1,0 +1,22 @@
+{
+  "name": "xype-ai",
+  "private": true,
+  "version": "0.0.0",
+  "description": "XYPE AI extension: context engine, session client and client-executed tools.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "grammars": "node scripts/build-grammars.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "web-tree-sitter": "0.27.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "tree-sitter-cli": "0.27.1",
+    "vitest": "5.1.0"
+  }
+}
