@@ -66,7 +66,8 @@ Dependency notes:
 
 ## 3a. Phase 1 follow-ups found during slices 3–4
 
-- TLS with a local dev CA (brief §3.4) for the edge proxy, gRPC, asyncpg (write and read engines, migrations), Redis and AMQP, before the first `/api/v1` or gRPC payload route (Phase 2).
+- TLS with a local dev CA (brief §3.7) for the edge proxy, gRPC, asyncpg (write and read engines, migrations), Redis and AMQP, before the first `/api/v1` or gRPC payload route (Phase 2).
+- Encryption at rest (brief §3.7): encrypted volumes for Postgres, Redis and RabbitMQ in the hosted environment, and encrypted `chat_messages` content (Phase 4), before hosting.
 - Docker secrets (`*_FILE` variables) for database, Redis and broker passwords instead of environment variables, before hosting.
 - Validate JSONB columns (`agent_tasks.parameters`, `events.payload_meta`) against typed models with allow-listed keys at the DAL boundary (with their first repositories).
 - Done in slice 7 (ADR-0012): network guard in the test suite, paid-configuration check, integration tests, dependency scan and SBOM in CI.
