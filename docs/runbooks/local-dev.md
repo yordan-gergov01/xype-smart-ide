@@ -6,7 +6,7 @@ OpenTelemetry collector in the `observability` profile. Design: ADR-0034, ADR-00
 
 ## Prerequisites
 
-- Docker Desktop with Compose v2.
+- Docker Desktop with Compose v2, running whenever you commit: the gitleaks pre-commit hook runs in a container.
 - On Windows (WSL2), give Docker 4–5 GB of memory. In `%UserProfile%\.wslconfig`:
 
   ```ini
