@@ -3,9 +3,11 @@
 Hosts have no defaults: where a dependency lives is deployment configuration.
 """
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 
-from common_lib.settings import PostgresSettings
+from common_lib.settings import KeyedSecret, PostgresSettings
+
+DAY = 86_400
 
 
 class BackendSettings(PostgresSettings):
@@ -32,3 +34,24 @@ class BackendSettings(PostgresSettings):
 
     # Each dependency must answer the readiness check within this time.
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
+
+    # Auth (ADR-0014). Keys as `<id>:<base64url>`: `python -m backend.admin_cli new-key`.
+    # The previous key and pepper only verify, during a rotation.
+    auth_signing_key_current: KeyedSecret
+    auth_signing_key_previous: KeyedSecret | None = None
+    auth_pepper_current: KeyedSecret
+    auth_pepper_previous: KeyedSecret | None = None
+    auth_issuer: str = "xype"
+    # At most 15 minutes: revocation, rotation and the runbook rely on it (ADR-0014).
+    auth_access_ttl_s: int = Field(default=900, ge=60, le=900)
+    auth_refresh_ttl_s: int = Field(default=30 * DAY, ge=DAY, le=90 * DAY)
+    auth_family_max_age_s: int = Field(default=90 * DAY, ge=DAY, le=365 * DAY)
+    # Requests per user and minute, REST calls and stream messages alike.
+    rate_limit_per_minute: int = Field(default=200, ge=1, le=100_000)
+    # Failed logins per client id and minute before it must wait.
+    auth_login_failures_per_minute: int = Field(default=10, ge=1, le=1000)
+
+    @field_validator("auth_signing_key_previous", "auth_pepper_previous", mode="before")
+    @classmethod
+    def _empty_is_none(cls, value: object) -> object:
+        return None if value == "" else value

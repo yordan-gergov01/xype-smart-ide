@@ -23,7 +23,7 @@ Conventions:
 | router | `ModelRouter` | `backend/services/router/` |
 | prompts | `PromptRegistry` | `backend/services/prompts/`; templates as files in `server/prompts/` |
 | security | `CryptoBox`, `SecretScrubber`, `KeyStore`, `hmac_id` | `common_lib/security/` (implemented; shared by the backend and the indexer), `KeyStore` adapter `common_lib/keystore/` (Redis only); client side in `clients/xype-ai` |
-| auth | `CredentialVerifier`, `Principal` | `backend/services/auth/` |
+| auth | `CredentialVerifier`, `UserStore`, `RefreshTokenStore`, `RateLimiter`, `RevocationPublisher`; values `Principal`, `Credential`, `AccessClaims` | `backend/services/auth/` (seams), `backend/dal/auth/` (adapters), `common_lib/auth.py` (values and errors) |
 | connectors | `ConnectorClient` | `backend/services/connectors/` (Protocols), adapters wired in `backend/main.py` |
 | observability | `Metrics` | `common_lib` (used by every service); added when services emit metrics; HTTP metrics live in the transport layer (ADR-0011) |
 | health | `DependencyProbe` | `backend/services/health/` (implemented): `name`, `async check()` raising `DependencyUnavailableError`; adapters in `backend/dal/health/`, `backend/messaging/health.py` |
@@ -314,22 +314,60 @@ class KeyStore(Protocol):
     async def revoke_user(self, user_id: str) -> None: ...
     async def revoke_family(self, family_id: str) -> None: ...
 
+```
+
+### auth (ADR-0014)
+
+Values and errors live in `common_lib/auth.py`, so the adapters in `backend/dal/auth`
+can return them without importing the service layer.
+
+```python
 @dataclass(frozen=True, slots=True)
 class Principal:
     user_id: UUID
     team_id: UUID
-    role: str
+    role: Literal["developer", "admin"]
 
 @dataclass(frozen=True, slots=True)
 class Credential:
-    kind: str                # "client_credentials" now, "oidc_id_token" later
+    kind: Literal["client_credentials"]   # "oidc_id_token" later
     client_id: str
     secret: SecretBytes
 
 class CredentialVerifier(Protocol):
-    """Client credentials now, OIDC ID tokens later (ADR-0014)."""
-    async def verify(self, credential: Credential) -> Principal: ...
+    """Client credentials now, OIDC ID tokens later. Raises InvalidCredentialsError.
+    Returns the principal and the stored state it was verified against."""
+    async def verify(self, credential: Credential) -> VerifiedCredential: ...
+
+class UserStore(Protocol):            # Postgres `users`, `teams`
+    async def find_credentials(self, client_id: str) -> StoredCredentials | None: ...
+    async def record_login(self, user_id: UUID, at: datetime) -> None: ...
+    async def create_team(self, name: str) -> UUID: ...             # ConflictError
+    async def find_team(self, name: str) -> UUID | None: ...
+    async def create_user(self, *, team_id, email, display_name, role, client_id, secret_hash) -> UUID: ...
+    async def set_active(self, client_id: str, *, active: bool) -> UUID | None: ...
+    async def set_secret_hash(self, client_id: str, secret_hash: str) -> UUID | None: ...
+
+class RefreshTokenStore(Protocol):    # Postgres `refresh_tokens`, by peppered hash
+    async def add(self, token: NewRefreshToken, *, secret_hash: str) -> bool:
+        """Only while the user is active and still has `secret_hash` (per-user lock)."""
+    async def rotate(self, token_hashes: Sequence[str], new_token_hash: str, *,
+                     now: datetime, refresh_ttl_seconds: int) -> Rotated | Reused | NotFound:
+        """Atomic; reuse of a revoked token revokes its family."""
+    async def revoke_user(self, user_id: UUID, *, now: datetime) -> None: ...
+
+class RateLimiter(Protocol):          # Redis, GCRA in one Lua script; fails closed
+    async def acquire(self, key: str, *, limit: int, period_seconds: int,
+                      now: datetime, cost: int = 1) -> RateDecision: ...
+
+class RevocationPublisher(Protocol):  # Redis channel `xype:auth:revoked`
+    async def publish(self, revocation: Revocation) -> None: ...
 ```
+
+`AuthService` (`login`, `refresh`, `authenticate`) and `ClientAdmin` (`create_team`,
+`create_client`, `disable_client`, `rotate_secret`) are built from these in
+`backend/core/auth.py`, shared by the composition roots `backend.main` and
+`backend.admin_cli`.
 
 ## connectors
 

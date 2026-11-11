@@ -1,17 +1,29 @@
-"""Backend app built with fake probes and placeholder settings (no I/O)."""
+"""Backend app built with fake probes, fake auth stores and placeholder settings (no I/O)."""
 
 import asyncio
 import io
-from collections.abc import Sequence
+import json
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 
 import httpx
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+from backend.core.auth import peppers
 from backend.core.settings import BackendSettings
 from backend.main import create_app
+from backend.services.auth import AuthDependencies, ClientCredentialVerifier
 from backend.services.health import DependencyProbe
 from common_lib.errors import DependencyUnavailableError
+from support.auth import (
+    PEPPER,
+    SIGNING_KEY,
+    FakeRateLimiter,
+    FakeRefreshTokenStore,
+    FakeRevocationPublisher,
+    FakeUserStore,
+)
 from support.tls import ca_file
 
 
@@ -56,20 +68,71 @@ def make_settings(**overrides: object) -> BackendSettings:
         "log_format": "json",
         "readiness_timeout_seconds": 0.2,
         "tls_ca_file": ca_file(),
+        "auth_signing_key_current": SIGNING_KEY,
+        "auth_pepper_current": PEPPER,
     }
     values.update(overrides)
     return BackendSettings.model_validate(values)
 
 
+@dataclass
+class FakeAuth:
+    """The auth feature's stores as fakes, wired like `backend.core.auth`."""
+
+    settings: BackendSettings
+    users: FakeUserStore = field(default_factory=FakeUserStore)
+    limiter: FakeRateLimiter = field(default_factory=FakeRateLimiter)
+    revocations: FakeRevocationPublisher = field(default_factory=FakeRevocationPublisher)
+    tokens: FakeRefreshTokenStore = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.tokens = FakeRefreshTokenStore(self.users)
+
+    @property
+    def deps(self) -> AuthDependencies:
+        return AuthDependencies(
+            verifier=ClientCredentialVerifier(self.users, peppers(self.settings)),
+            users=self.users,
+            tokens=self.tokens,
+            limiter=self.limiter,
+            revocations=self.revocations,
+        )
+
+
 class Harness:
     """An app plus everything a test needs to inspect what it emitted."""
 
-    def __init__(self, probes: Sequence[DependencyProbe], logs: io.StringIO) -> None:
+    def __init__(
+        self, probes: Sequence[DependencyProbe], logs: io.StringIO, **settings: object
+    ) -> None:
         self.logs = logs
-        self.app = create_app(make_settings(), probes=probes)
+        self.settings = make_settings(**settings)
+        self.auth = FakeAuth(self.settings)
+        self.app = create_app(self.settings, probes=probes, auth=self.auth.deps)
         self.spans = InMemorySpanExporter()
         self.app.state.tracer_provider.add_span_processor(SimpleSpanProcessor(self.spans))
 
     def client(self) -> httpx.AsyncClient:
         transport = httpx.ASGITransport(app=self.app, raise_app_exceptions=False)
         return httpx.AsyncClient(transport=transport, base_url="http://backend.test")
+
+
+def emitted(harness: Harness) -> str:
+    """Every log line and every span the app produced, as one string."""
+    logs: str = harness.logs.getvalue()
+    spans = [
+        json.dumps(
+            {
+                "name": s.name,
+                "attributes": dict(s.attributes or {}),
+                "events": [(e.name, dict(e.attributes or {})) for e in s.events],
+                "status": s.status.description,
+            }
+        )
+        for s in harness.spans.get_finished_spans()
+    ]
+    return logs + "\n".join(spans)
+
+
+# Builds a `Harness` from probes and settings overrides (the unit conftest's fixture).
+type HarnessFactory = Callable[..., Harness]

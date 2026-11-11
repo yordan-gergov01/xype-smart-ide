@@ -22,6 +22,9 @@ aio-pika
 # AES-256-GCM, X25519, HKDF and HMAC for payload encryption and key wrapping
 # (ADR-0015, ADR-0016); the standard library has no AEAD or X25519.
 cryptography
+# Signed access tokens (EdDSA JWTs, ADR-0014): header, claims and expiry checks we would
+# otherwise hand-roll; it signs with `cryptography`.
+pyjwt[crypto]
 # HTTP client of the embedder (Ollama, TEI) and later the connectors.
 httpx
 # Metrics and traces (ADR-0011).

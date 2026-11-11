@@ -38,6 +38,17 @@ python tools/server_tool.py python -m devtools.dev_ca
 
 Every payload hop is TLS only, and the stack does not start without these files.
 
+Generate the auth keys once (ADR-0014) and paste each value into `deploy/env/.env`. The
+stack refuses to start while `AUTH_SIGNING_KEY_CURRENT` or `AUTH_PEPPER_CURRENT` is empty:
+
+```bash
+python tools/server_tool.py python -m backend.admin_cli new-key signing-1
+```
+
+```bash
+python tools/server_tool.py python -m backend.admin_cli new-key pepper-1
+```
+
 Change every `dev-only-change-me-*` value before any shared use, then:
 
 ```bash
@@ -89,6 +100,29 @@ RabbitMQ, Ollama and the backend publish no ports. Reach them with
 ```bash
 docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec postgres sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
+
+## Client credentials
+
+An admin creates one client per developer (ADR-0014). The secret is printed once; hand
+it over a private channel. The developer enters it in the extension, which keeps it in
+the OS keychain.
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -m backend.admin_cli create-team "XYPE Web"
+```
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -m backend.admin_cli create-client --team "XYPE Web" --email dev@example.com --name "Dev One"
+```
+
+`disable-client <client_id>` stops logins and refreshes and tells every replica, and
+`rotate-secret <client_id>` issues a new secret. Both revoke the user's refresh tokens;
+access tokens already issued expire within 15 minutes.
+
+| Rotate | How |
+|---|---|
+| Signing key | Move the current value to `AUTH_SIGNING_KEY_PREVIOUS`, set a new `AUTH_SIGNING_KEY_CURRENT`, restart. Remove the previous key after 15 minutes. |
+| Pepper | Move the current value to `AUTH_PEPPER_PREVIOUS`, set a new `AUTH_PEPPER_CURRENT`, restart. Secrets and refresh tokens hashed under the previous pepper keep working. Removing it forces those clients to log in again with a rotated secret. |
 
 ## TLS and the dev CA
 

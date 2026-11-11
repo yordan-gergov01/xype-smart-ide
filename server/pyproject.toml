@@ -122,7 +122,7 @@ include_external_packages = true
 name = "The shared library outside models imports no web, transport, broker, cache, HTTP or ORM code"
 type = "forbidden"
 source_modules = [
-    "common_lib.clock", "common_lib.correlation", "common_lib.domain", "common_lib.errors",
+    "common_lib.auth", "common_lib.clock", "common_lib.correlation", "common_lib.domain", "common_lib.errors",
     "common_lib.llm", "common_lib.logging_config", "common_lib.secret_bytes", "common_lib.security",
     "common_lib.settings", "common_lib.tls", "common_lib.tracing",
 ]

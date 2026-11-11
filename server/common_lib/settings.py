@@ -5,12 +5,56 @@ creates it once at startup through `load_settings`. Values come only from
 environment variables; nothing else in the code reads `os.environ`.
 """
 
+import base64
+import binascii
+import re
+import secrets
 import sys
+from typing import Annotated
 
-from pydantic import Field, FilePath, SecretStr, ValidationError, field_validator
+from pydantic import AfterValidator, Field, FilePath, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from common_lib.logging_config import LogFormat, LogLevel
+from common_lib.secret_bytes import SecretBytes
+
+# `<id>:<32 random bytes, base64url>`: signing keys, peppers and KEKs (ADR-0014, ADR-0015).
+_KEYED_SECRET = re.compile(r"^([a-z0-9][a-z0-9-]{0,31}):([A-Za-z0-9_-]{43}=?)$")
+KEYED_SECRET_BYTES = 32
+
+
+def _check_keyed_secret(value: SecretStr) -> SecretStr:
+    parse_keyed_secret(value)
+    return value
+
+
+def parse_keyed_secret(value: SecretStr) -> tuple[str, SecretBytes]:
+    """Split `<id>:<base64url>` into the id and the 32 key bytes.
+
+    The error names the expected shape only, never the value.
+    """
+    match = _KEYED_SECRET.match(value.get_secret_value())
+    if match is None:
+        raise ValueError("expected '<id>:<32 bytes as base64url>'")
+    try:
+        key = base64.urlsafe_b64decode(match.group(2) + "=" * (-len(match.group(2)) % 4))
+    except binascii.Error:
+        raise ValueError("expected '<id>:<32 bytes as base64url>'") from None
+    if len(key) != KEYED_SECRET_BYTES or len(set(key)) < KEYED_SECRET_BYTES // 4:
+        raise ValueError("the key must be 32 random bytes")
+    return match.group(1), SecretBytes(key)
+
+
+# A secret with its id, validated at startup; `parse_keyed_secret` gives the bytes.
+KeyedSecret = Annotated[SecretStr, AfterValidator(_check_keyed_secret)]
+
+
+def new_keyed_secret(key_id: str) -> str:
+    """A fresh `<id>:<base64url>` value for the environment (`admin_cli new-key`)."""
+    key = secrets.token_bytes(KEYED_SECRET_BYTES)
+    value = f"{key_id}:{base64.urlsafe_b64encode(key).decode().rstrip('=')}"
+    parse_keyed_secret(SecretStr(value))
+    return value
 
 
 class ServiceSettings(BaseSettings):

@@ -12,7 +12,7 @@ import pytest
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 from opentelemetry.trace import StatusCode
-from support.backend import Harness
+from support.backend import Harness, emitted
 
 SECRETS = (
     "SECRET-BODY-def-add-a-b",
@@ -21,23 +21,6 @@ SECRETS = (
     "SECRET-PATH-src-billing-py",
     "SECRET-EXCEPTION-MESSAGE",
 )
-
-
-def emitted(harness: Harness) -> str:
-    """Every log line and every span the app produced, as one string."""
-    logs: str = harness.logs.getvalue()
-    spans = [
-        json.dumps(
-            {
-                "name": s.name,
-                "attributes": dict(s.attributes or {}),
-                "events": [(e.name, dict(e.attributes or {})) for e in s.events],
-                "status": s.status.description,
-            }
-        )
-        for s in harness.spans.get_finished_spans()
-    ]
-    return logs + "\n".join(spans)
 
 
 @pytest.fixture

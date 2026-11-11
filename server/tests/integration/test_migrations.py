@@ -5,89 +5,36 @@ Sync tests on purpose: Alembic's env.py runs its own event loop.
 """
 
 import asyncio
-import os
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
-from alembic import command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.migration import MigrationContext
-from pydantic import SecretStr
 from sqlalchemy import URL, Connection, text
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import create_async_engine
-from support import containers
+from support.database import ROLES, Database, alembic, postgres
 from support.tls import ca_file
 
 from common_lib.models import Base
-from common_lib.models.connection import postgres_url
-from common_lib.settings import PostgresSettings
 from common_lib.tls import client_context
 
 pytestmark = pytest.mark.integration
 
-ROOT = Path(__file__).resolve().parents[3]
-SERVER = ROOT / "server"
-ROLES = {
-    "POSTGRES_OWNER_USER": "xype_owner",
-    "POSTGRES_OWNER_PASSWORD": "test-only-owner",
-    "POSTGRES_APP_USER": "xype_app",
-    "POSTGRES_APP_PASSWORD": "test-only-app",
-}
-
 
 @pytest.fixture(scope="module")
-def database() -> Iterator[dict[str, Any]]:
-    env = {
-        "POSTGRES_USER": "postgres",
-        "POSTGRES_PASSWORD": "test-only-super",
-        "POSTGRES_DB": "xype",
-        **ROLES,
-    }
-    with containers.postgres(env, initdb=True) as container:
-        yield {
-            "host": container.get_container_host_ip(),
-            "port": int(container.get_exposed_port(5432)),
-        }
+def database() -> Iterator[Database]:
+    with postgres() as db:
+        yield db
 
 
-def _url(database: dict[str, Any], user: str, password: str) -> URL:
-    settings = PostgresSettings(
-        db_host=database["host"],
-        db_port=database["port"],
-        db_name="xype",
-        db_user=user,
-        db_password=SecretStr(password),
-        tls_ca_file=ca_file(),
-    )
-    return postgres_url(settings)
+def _url(database: Database, user: str, password: str) -> URL:
+    return database.url(user, password)
 
 
-def _alembic(database: dict[str, Any], *commands: tuple[str, str]) -> None:
-    env = {
-        "DB_HOST": database["host"],
-        "DB_PORT": str(database["port"]),
-        "DB_NAME": "xype",
-        "DB_USER": ROLES["POSTGRES_OWNER_USER"],
-        "DB_PASSWORD": ROLES["POSTGRES_OWNER_PASSWORD"],
-        "LOG_LEVEL": "WARNING",
-        "TLS_CA_FILE": str(ca_file()),
-    }
-    saved = {k: os.environ.get(k) for k in env}
-    os.environ.update(env)
-    try:
-        config = Config(str(SERVER / "alembic.ini"))
-        for name, target in commands:
-            getattr(command, name)(config, target)
-    finally:
-        for key, value in saved.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+def _alembic(database: Database, *commands: tuple[str, str]) -> None:
+    alembic(database, *commands)
 
 
 def _with_connection(url: URL, action: Any) -> Any:  # reason: any sync callback
@@ -108,14 +55,14 @@ def _diff(connection: Connection) -> list[Any]:
     return list(compare_metadata(MigrationContext.configure(connection), Base.metadata))
 
 
-def test_upgrade_builds_exactly_the_model_schema(database: dict[str, Any]) -> None:
+def test_upgrade_builds_exactly_the_model_schema(database: Database) -> None:
     _alembic(database, ("upgrade", "head"))
     owner = _url(database, ROLES["POSTGRES_OWNER_USER"], ROLES["POSTGRES_OWNER_PASSWORD"])
     assert _with_connection(owner, _diff) == []
 
 
 def test_app_role_reads_and_writes_rows_but_cannot_change_the_schema(
-    database: dict[str, Any],
+    database: Database,
 ) -> None:
     _alembic(database, ("upgrade", "head"))
     app = _url(database, ROLES["POSTGRES_APP_USER"], ROLES["POSTGRES_APP_PASSWORD"])
@@ -163,7 +110,7 @@ def test_app_role_reads_and_writes_rows_but_cannot_change_the_schema(
             _with_connection(app, lambda c, sql=ddl: c.execute(text(sql)))
 
 
-def test_checks_reject_plaintext_ids_and_credentials_in_urls(database: dict[str, Any]) -> None:
+def test_checks_reject_plaintext_ids_and_credentials_in_urls(database: Database) -> None:
     _alembic(database, ("upgrade", "head"))
     app = _url(database, ROLES["POSTGRES_APP_USER"], ROLES["POSTGRES_APP_PASSWORD"])
 
@@ -191,7 +138,7 @@ def test_checks_reject_plaintext_ids_and_credentials_in_urls(database: dict[str,
     _with_connection(app, insert(ok))
 
 
-def test_downgrade_and_upgrade_again(database: dict[str, Any]) -> None:
+def test_downgrade_and_upgrade_again(database: Database) -> None:
     _alembic(database, ("downgrade", "base"), ("upgrade", "head"))
     owner = _url(database, ROLES["POSTGRES_OWNER_USER"], ROLES["POSTGRES_OWNER_PASSWORD"])
     assert _with_connection(owner, _diff) == []

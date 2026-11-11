@@ -122,5 +122,14 @@ _Avoid_: package (means a Python distribution here)
 
 **Edge proxy**: the only container with a published API port; it forwards to the backend, which has no route outside the stack.
 
+**Principal**: who is calling, as the gateway authorizes it: user, team and role.
+
+**Client credentials**: the `client_id` and secret an admin creates for one developer; the secret is shown once and stored only as a peppered HMAC (ADR-0014).
+
+**Token family**: the chain of refresh tokens that starts with one login (one IDE window). Each refresh revokes the presented token and issues the next; presenting a revoked one revokes the whole family.
+_Avoid_: session (that is the gRPC stream)
+
+**Pepper**: the server-side key under which client secrets and refresh tokens are HMACed before they are stored, so a database dump cannot be checked offline.
+
 **Dev CA**: the local certificate authority in `deploy/certs/` (never committed) that issues one server certificate per TLS service of the stack; name constraints limit it to the stack's names (ADR-0036).
 _Avoid_: self-signed certificate (each leaf is signed by the CA)

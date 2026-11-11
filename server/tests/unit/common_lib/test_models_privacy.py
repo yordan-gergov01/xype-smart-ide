@@ -17,7 +17,7 @@ REVIEWED_TEXT_COLUMNS = {
     "users.display_name": "account identity",
     "users.role": "enum (CHECK)",
     "users.client_id": "credential id, not the secret",
-    "users.client_secret_hash": "argon2id hash",
+    "users.client_secret_hash": "peppered HMAC-SHA256 of a random secret (ADR-0014)",
     "projects.name": "organisation metadata",
     "projects.company_os_ref": "external id",
     "projects.jira_project_key": "external id",
