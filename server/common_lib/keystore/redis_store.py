@@ -6,11 +6,16 @@ Layout (all keys expire with the session key, ADR-0015):
 - `xype:skb:<key_id>`: the stream the key is bound to;
 - `xype:skn:<key_id>:c2s`: the highest counter received from the client;
 - `xype:skc:<key_id>:s2c`: the last counter this server allocated for sending;
-- `xype:sku:<user_id>`, `xype:skf:<family_id>`: the key ids of a user and of a family.
+- `xype:sku:<user_id>`, `xype:skf:<family_id>`: the key ids of a user and of a family,
+  as sorted sets scored by creation time (milliseconds), so the cap evicts the oldest;
+- `xype:skr:u:<user_id>`, `xype:skr:f:<family_id>`: revocation tombstones that refuse
+  new keys for `REVOCATION_MEMORY_SECONDS` (the user's holds the revocation time).
 The server only receives client-to-server payloads and only sends server-to-client
 ones, so the counters exist for those directions only (no nonce is ever used twice
 under one direction key). Every write is one Lua script, so revocation cannot race a
-concurrent `put`. Redis errors become `DependencyUnavailableError("keystore")`.
+concurrent `put`. The scripts build the names of per-key entries from the ids they
+read, so they need one Redis node, not Redis Cluster (ADR-0015). Redis errors become
+`DependencyUnavailableError("keystore")`.
 """
 
 import base64
@@ -25,6 +30,7 @@ from redis.exceptions import RedisError
 from common_lib.errors import DependencyUnavailableError, InvalidValueError
 from common_lib.secret_bytes import SecretBytes
 from common_lib.security import (
+    REVOCATION_MEMORY_SECONDS,
     DecryptionError,
     Direction,
     DuplicateKeyError,
@@ -32,6 +38,7 @@ from common_lib.security import (
     KekRing,
     KeyBoundElsewhereError,
     KeyNotFoundError,
+    KeyRevokedError,
     NonceError,
     SessionKeyRecord,
     WrappedKey,
@@ -42,18 +49,58 @@ from common_lib.security import (
 
 _DEPENDENCY = "keystore"
 _RECEIVED, _SENT = Direction.CLIENT_TO_SERVER, Direction.SERVER_TO_CLIENT
-# A new key: never overwrites one (its counters would restart), and index sets only
-# ever extend their TTL (EXPIRE GT), so they outlive every key they list.
-_PUT = """
+# Deletes one key with its binding, counters and index entries. Shared by the cap in
+# `_PUT` and by `_REVOKE`, so an evicted key leaves nothing behind either.
+_DELETE = """
+local function delete_key(id)
+  local raw = redis.call('GET', 'xype:sk:' .. id)
+  -- A malformed record must not stop the deletion of the keys after it.
+  local ok, record = pcall(cjson.decode, raw or '')
+  if ok and type(record) == 'table' and type(record.user_id) == 'string'
+     and type(record.family_id) == 'string' then
+    redis.call('ZREM', 'xype:sku:' .. record.user_id, id)
+    redis.call('ZREM', 'xype:skf:' .. record.family_id, id)
+  end
+  redis.call('DEL', 'xype:sk:' .. id, 'xype:skb:' .. id,
+             'xype:skn:' .. id .. ':c2s', 'xype:skc:' .. id .. ':s2c')
+end
+"""
+# A new key, unless its family or user was revoked (tombstones, see `revoke_*`). Never
+# overwrites one (its counters would restart). Index sets are ordered by creation time
+# and only ever extend their TTL (EXPIRE GT), so they outlive every key they list. Then
+# ids of expired keys leave the user's index and the oldest others go over the cap.
+_PUT = (
+    _DELETE
+    + """
+if redis.call('EXISTS', KEYS[5]) == 1 then return -2 end
+local revoked_at = redis.call('GET', KEYS[4])
+if revoked_at and tonumber(ARGV[6]) <= tonumber(revoked_at) then return -2 end
 if not redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[3]) then return 0 end
 for i = 2, 3 do
-  redis.call('SADD', KEYS[i], ARGV[2])
+  redis.call('ZADD', KEYS[i], ARGV[4], ARGV[2])
   if redis.call('EXPIRE', KEYS[i], ARGV[3], 'GT') == 0 then
     redis.call('EXPIRE', KEYS[i], ARGV[3], 'NX')
   end
 end
+local live = {}
+for _, id in ipairs(redis.call('ZRANGE', KEYS[2], 0, -1)) do
+  if redis.call('EXISTS', 'xype:sk:' .. id) == 1 then
+    table.insert(live, id)
+  else
+    redis.call('ZREM', KEYS[2], id)
+  end
+end
+local over = #live - tonumber(ARGV[5])
+for _, id in ipairs(live) do
+  if over <= 0 then break end
+  if id ~= ARGV[2] then
+    delete_key(id)
+    over = over - 1
+  end
+end
 return 1
 """
+)
 # Each of these first checks that the session key still exists and takes its TTL.
 _BIND = """
 local ttl = redis.call('PTTL', KEYS[1])
@@ -77,28 +124,37 @@ local counter = redis.call('INCR', KEYS[2])
 redis.call('PEXPIRE', KEYS[2], ttl)
 return counter
 """
-# Atomic: deletes every key the index lists, with its binding and counters, removes
-# the ids from the other index too, then the index itself.
-_REVOKE = """
-for _, id in ipairs(redis.call('SMEMBERS', KEYS[1])) do
-  local raw = redis.call('GET', 'xype:sk:' .. id)
-  -- A malformed record must not stop the revocation of the keys after it.
-  local ok, record = pcall(cjson.decode, raw or '')
-  if ok and type(record) == 'table' and type(record.user_id) == 'string'
-     and type(record.family_id) == 'string' then
-    redis.call('SREM', 'xype:sku:' .. record.user_id, id)
-    redis.call('SREM', 'xype:skf:' .. record.family_id, id)
-  end
-  redis.call('DEL', 'xype:sk:' .. id, 'xype:skb:' .. id,
-             'xype:skn:' .. id .. ':c2s', 'xype:skc:' .. id .. ':s2c')
+# Atomic: every key the index lists, the index, then the tombstone that refuses new
+# keys. `allow-oom`: a full store (noeviction) must still revoke; the deletes free memory
+# and the tombstone is a few bytes.
+_REVOKE = (
+    "#!lua flags=allow-oom\n"
+    + _DELETE
+    + """
+for _, id in ipairs(redis.call('ZRANGE', KEYS[1], 0, -1)) do
+  delete_key(id)
 end
 redis.call('DEL', KEYS[1])
+redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
 return 1
 """
+)
 
 
 def _key(key_id: str) -> str:
     return f"xype:sk:{key_id}"
+
+
+def _user_tombstone(user_id: str) -> str:
+    return f"xype:skr:u:{user_id}"
+
+
+def _family_tombstone(family_id: str) -> str:
+    return f"xype:skr:f:{family_id}"
+
+
+def _ms(moment: datetime) -> int:
+    return int(moment.timestamp() * 1000)
 
 
 def _aad(record: SessionKeyRecord, kek_id: str) -> bytes:
@@ -123,14 +179,38 @@ class RedisKeyStore:
         self._next = client.register_script(_NEXT)
         self._revoke = client.register_script(_REVOKE)
 
-    async def put(self, record: SessionKeyRecord, key: SecretBytes, *, ttl_seconds: int) -> None:
-        if ttl_seconds <= 0:
-            raise InvalidValueError("a session key needs a positive TTL")
+    async def put(
+        self,
+        record: SessionKeyRecord,
+        key: SecretBytes,
+        *,
+        ttl_seconds: int,
+        max_active: int,
+        credentials_issued_at: datetime,
+    ) -> None:
+        if ttl_seconds <= 0 or max_active <= 0:
+            raise InvalidValueError("a session key needs a positive TTL and cap")
         kek = self._kek.current
         wrapped = wrap_key(kek, KekPurpose.SESSION_KEYS, key, _aad(record, kek.kek_id))
-        keys = [_key(record.key_id), f"xype:sku:{record.user_id}", f"xype:skf:{record.family_id}"]
-        args: list[str | int] = [json.dumps(_encode(record, wrapped)), record.key_id, ttl_seconds]
-        if await self._call(lambda: self._put(keys=keys, args=args)) == 0:
+        keys = [
+            _key(record.key_id),
+            f"xype:sku:{record.user_id}",
+            f"xype:skf:{record.family_id}",
+            _user_tombstone(record.user_id),
+            _family_tombstone(record.family_id),
+        ]
+        args: list[str | int] = [
+            json.dumps(_encode(record, wrapped)),
+            record.key_id,
+            ttl_seconds,
+            _ms(record.created_at),
+            max_active,
+            _ms(credentials_issued_at),
+        ]
+        result = await self._call(lambda: self._put(keys=keys, args=args))
+        if result == -2:
+            raise KeyRevokedError("the user or token family was revoked")
+        if result == 0:
             raise DuplicateKeyError("a session key with this id already exists")
 
     async def get(self, key_id: str) -> tuple[SessionKeyRecord, SecretBytes]:
@@ -161,11 +241,15 @@ class RedisKeyStore:
         self._check(result)
         return result
 
-    async def revoke_user(self, user_id: str) -> None:
-        await self._call(lambda: self._revoke(keys=[f"xype:sku:{user_id}"], args=[]))
+    async def revoke_user(self, user_id: str, *, refuse_issued_until: datetime) -> None:
+        keys = [f"xype:sku:{user_id}", _user_tombstone(user_id)]
+        args = [_ms(refuse_issued_until), REVOCATION_MEMORY_SECONDS]
+        await self._call(lambda: self._revoke(keys=keys, args=args))
 
     async def revoke_family(self, family_id: str) -> None:
-        await self._call(lambda: self._revoke(keys=[f"xype:skf:{family_id}"], args=[]))
+        keys = [f"xype:skf:{family_id}", _family_tombstone(family_id)]
+        args = [1, REVOCATION_MEMORY_SECONDS]
+        await self._call(lambda: self._revoke(keys=keys, args=args))
 
     @staticmethod
     def _check(result: object, *, nonce: bool = False) -> None:

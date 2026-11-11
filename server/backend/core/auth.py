@@ -20,10 +20,14 @@ from backend.services.auth import (
     ClientCredentialVerifier,
     Pepper,
     PepperRing,
+    SessionKeyPolicy,
+    SessionKeyService,
     SigningKey,
 )
 from common_lib.clock import Clock
-from common_lib.settings import parse_keyed_secret
+from common_lib.keystore import RedisKeyStore
+from common_lib.security import Kek, KekRing
+from common_lib.settings import KeyedSecret, parse_keyed_secret
 
 
 def peppers(settings: BackendSettings) -> PepperRing:
@@ -44,9 +48,20 @@ def access_token_issuer(settings: BackendSettings, clock: Clock) -> AccessTokenI
     )
 
 
+def _kek(value: KeyedSecret) -> Kek:
+    kek_id, material = parse_keyed_secret(value)
+    return Kek(kek_id, material)
+
+
+def kek_ring(settings: BackendSettings) -> KekRing:
+    previous = settings.kek_previous
+    return KekRing(_kek(settings.kek_current), _kek(previous) if previous else None)
+
+
 def auth_dependencies(
-    settings: BackendSettings, database: Database, redis: Redis
+    settings: BackendSettings, database: Database, redis: Redis, keystore: Redis
 ) -> AuthDependencies:
+    """`redis` is the cache, `keystore` the non-evicting key store (ADR-0015)."""
     users = SqlUserStore(database.write_sessions)
     return AuthDependencies(
         verifier=ClientCredentialVerifier(users, peppers(settings)),
@@ -54,6 +69,7 @@ def auth_dependencies(
         tokens=SqlRefreshTokenStore(database.write_sessions),
         limiter=RedisRateLimiter(redis),
         revocations=RedisRevocationPublisher(redis),
+        keys=RedisKeyStore(keystore, kek_ring(settings)),
     )
 
 
@@ -72,7 +88,22 @@ def auth_service(settings: BackendSettings, deps: AuthDependencies, clock: Clock
     )
 
 
+def session_key_service(
+    settings: BackendSettings, deps: AuthDependencies, clock: Clock
+) -> SessionKeyService:
+    policy = SessionKeyPolicy(
+        mints_per_minute=settings.session_keys_per_minute,
+        max_active_per_user=settings.session_keys_max_active,
+    )
+    return SessionKeyService(deps.keys, deps.limiter, policy=policy, clock=clock)
+
+
 def client_admin(settings: BackendSettings, deps: AuthDependencies, clock: Clock) -> ClientAdmin:
     return ClientAdmin(
-        deps.users, deps.tokens, deps.revocations, peppers=peppers(settings), clock=clock
+        deps.users,
+        deps.tokens,
+        deps.revocations,
+        deps.keys,
+        peppers=peppers(settings),
+        clock=clock,
     )

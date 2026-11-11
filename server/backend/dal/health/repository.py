@@ -29,12 +29,12 @@ class DatabaseProbe:
 
 
 class RedisProbe:
-    """Redis answers PING with this service's credentials."""
+    """A Redis (the cache or the key store) answers PING with this service's
+    credentials."""
 
-    name = "redis"
-
-    def __init__(self, client: Redis) -> None:
+    def __init__(self, client: Redis, *, name: str = "redis") -> None:
         self._client = client
+        self.name = name
 
     async def check(self) -> None:
         try:

@@ -32,6 +32,7 @@ from common_lib.auth import (
     TokenPair,
 )
 from common_lib.clock import Clock
+from common_lib.security import KeyStore
 
 logger = structlog.get_logger(__name__)
 
@@ -55,6 +56,7 @@ class AuthDependencies:
     tokens: RefreshTokenStore
     limiter: RateLimiter
     revocations: RevocationPublisher
+    keys: KeyStore
 
 
 class AuthService:
@@ -126,12 +128,19 @@ class AuthService:
             refresh_ttl_seconds=self._policy.refresh_ttl_seconds,
         )
         if isinstance(outcome, Reused):
-            await self._deps.revocations.publish(Revocation("family", outcome.family_id))
+            # The family's session keys go too, and no new one is minted for it while its
+            # access tokens live (ADR-0015). The replicas hear about it even when the key
+            # store is down (that answers 503; the next reuse deletes the keys).
+            # Logged first: the audit record survives a store outage below.
             logger.warning(
                 "auth.refresh.reused",
                 user_id=str(outcome.user_id),
                 family_id=str(outcome.family_id),
             )
+            try:
+                await self._deps.keys.revoke_family(str(outcome.family_id))
+            finally:
+                await self._deps.revocations.publish(Revocation("family", outcome.family_id))
             raise InvalidTokenError
         if not isinstance(outcome, Rotated):
             raise InvalidTokenError

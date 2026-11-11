@@ -38,8 +38,13 @@ python tools/server_tool.py python -m devtools.dev_ca
 
 Every payload hop is TLS only, and the stack does not start without these files.
 
-Generate the auth keys once (ADR-0014) and paste each value into `deploy/env/.env`. The
-stack refuses to start while `AUTH_SIGNING_KEY_CURRENT` or `AUTH_PEPPER_CURRENT` is empty:
+If you created the CA before the key store existed (Phase 2 slice 5b), run it once with
+`--rotate-ca`: the CA's name constraints list every service, so it cannot issue for
+`keystore`.
+
+Generate the keys once (auth: ADR-0014, KEK: ADR-0015) and paste each value into
+`deploy/env/.env`. The stack refuses to start while `AUTH_SIGNING_KEY_CURRENT`,
+`AUTH_PEPPER_CURRENT` or `KEK_CURRENT` is empty:
 
 ```bash
 python tools/server_tool.py python -m backend.admin_cli new-key signing-1
@@ -47,6 +52,10 @@ python tools/server_tool.py python -m backend.admin_cli new-key signing-1
 
 ```bash
 python tools/server_tool.py python -m backend.admin_cli new-key pepper-1
+```
+
+```bash
+python tools/server_tool.py python -m backend.admin_cli new-key kek-1
 ```
 
 Change every `dev-only-change-me-*` value before any shared use, then:
@@ -127,7 +136,7 @@ access tokens already issued expire within 15 minutes.
 ## TLS and the dev CA
 
 `devtools.dev_ca` creates one CA (`deploy/certs/ca.crt`, key `ca.key`) and one
-certificate per TLS server: `edge`, `backend`, `postgres`, `redis`, `rabbitmq`. Each
+certificate per TLS server: `edge`, `backend`, `postgres`, `redis`, `keystore`, `rabbitmq`. Each
 service mounts only its own directory at `/certs`, and the CA key is never mounted. The
 CA's name constraints let it issue only for these names, `localhost` and `127.0.0.0/8`.
 On Windows, file modes do not protect the keys: keep the checkout under your user profile,
@@ -178,10 +187,11 @@ Measured on 2026-11-07 (Docker Desktop with 3.7 GiB, CPU only) with `docker stat
 | ollama (`qwen2.5-coder:1.5b` + `qwen3-embedding:0.6b`, 4096 context) | 2304 MiB | 1.73 GiB |
 | rabbitmq | 384 MiB | 41–160 MiB (alarm at 60% of the limit, so not lower) |
 | postgres (empty) | 384 MiB | 37–54 MiB |
-| redis | 128 MiB | 9 MiB |
+| redis | 96 MiB | 9 MiB |
+| keystore (measured 2026-11-11, 8 keys of one user) | 40 MiB | 6 MiB |
 | backend (measured 2026-11-08, idle) | 256 MiB | 76 MiB |
 | edge (nginx) | 32 MiB | 4 MiB |
-| **Default stack** | **3488 MiB** | **≈ 1.9–2.1 GiB** |
+| **Default stack** | **3496 MiB** | **≈ 1.9–2.1 GiB** |
 | grafana | 512 MiB | 258–314 MiB (thrashed at a 256 MiB limit on first start) |
 | prometheus | 256 MiB | 49 MiB |
 | otel-collector | 128 MiB | 54 MiB |

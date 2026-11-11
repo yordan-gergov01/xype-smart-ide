@@ -18,8 +18,13 @@ from backend.api.auth import router as auth_router
 from backend.api.errors import register_error_handlers
 from backend.api.health import router as health_router
 from backend.api.middleware import HttpMetrics, RequestContextMiddleware, UnhandledErrorMiddleware
-from backend.core.auth import auth_dependencies, auth_service
-from backend.core.connections import Database, create_database, create_redis_client
+from backend.core.auth import auth_dependencies, auth_service, session_key_service
+from backend.core.connections import (
+    Database,
+    create_database,
+    create_keystore_client,
+    create_redis_client,
+)
 from backend.core.settings import BackendSettings
 from backend.dal.health import DatabaseProbe, RedisProbe
 from backend.messaging.health import BrokerProbe
@@ -36,13 +41,18 @@ logger = structlog.get_logger(__name__)
 
 
 def _default_probes(
-    settings: BackendSettings, database: Database, redis: Redis
+    settings: BackendSettings, database: Database, redis: Redis, keystore: Redis
 ) -> tuple[DependencyProbe, ...]:
-    """The primary, the read replica when there is one, Redis and the broker."""
+    """The primary, the read replica when there is one, both Redis and the broker."""
     probes: list[DependencyProbe] = [DatabaseProbe(database.write_engine)]
     if database.read_engine is not database.write_engine:
         probes.append(DatabaseProbe(database.read_engine, name="database_read"))
-    return (*probes, RedisProbe(redis), BrokerProbe(settings))
+    return (
+        *probes,
+        RedisProbe(redis),
+        RedisProbe(keystore, name="keystore"),
+        BrokerProbe(settings),
+    )
 
 
 def create_app(
@@ -61,11 +71,11 @@ def create_app(
         service=SERVICE_NAME, otlp_endpoint=settings.otel_exporter_otlp_endpoint
     )
     database = create_database(settings)
-    redis = create_redis_client(settings)
+    redis, keystore = create_redis_client(settings), create_keystore_client(settings)
     if probes is None:
-        probes = _default_probes(settings, database, redis)
+        probes = _default_probes(settings, database, redis, keystore)
     clock = clock or SystemClock()
-    auth = auth or auth_dependencies(settings, database, redis)
+    auth = auth or auth_dependencies(settings, database, redis, keystore)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -76,6 +86,7 @@ def create_app(
             stack.push_async_callback(asyncio.to_thread, tracer_provider.shutdown)
             stack.push_async_callback(database.dispose)
             stack.push_async_callback(redis.aclose)
+            stack.push_async_callback(keystore.aclose)
             yield
         logger.info("backend.stopped")
 
@@ -89,6 +100,7 @@ def create_app(
         probes, timeout_seconds=settings.readiness_timeout_seconds
     )
     app.state.auth_service = auth_service(settings, auth, clock)
+    app.state.session_key_service = session_key_service(settings, auth, clock)
     _mount(app, tracer_provider.get_tracer(SERVICE_NAME), HttpMetrics(registry))
     return app
 

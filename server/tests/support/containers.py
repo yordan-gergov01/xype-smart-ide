@@ -75,9 +75,12 @@ def postgres(env: dict[str, str], *, initdb: bool = False) -> DockerContainer:
     return _ready(container, 5432, ready)
 
 
-def redis(env: dict[str, str]) -> DockerContainer:
-    """Port 6379, TLS only. `env` sets REDIS_PASSWORD and the backend's ACL user."""
-    return _ready(_service("redis").with_envs(**env), 6379, "Ready to accept connections tls")
+def redis(env: dict[str, str], *, service: str = "redis") -> DockerContainer:
+    """Port 6379, TLS only: the cache, or with `service="keystore"` the key store. `env`
+    sets REDIS_PASSWORD and the backend's ACL user; the mode comes from the compose file."""
+    mode = SERVICES[service]["environment"]["REDIS_MODE"]
+    container = _service(service).with_envs(**env, REDIS_MODE=mode)
+    return _ready(container, 6379, "Ready to accept connections tls")
 
 
 def rabbitmq(env: dict[str, str]) -> DockerContainer:

@@ -29,6 +29,7 @@ from common_lib.settings import new_keyed_secret
 SIGNING_KEY = new_keyed_secret("test-signing")
 OTHER_SIGNING_KEY = new_keyed_secret("test-signing-old")
 PEPPER = new_keyed_secret("test-pepper")
+KEK = new_keyed_secret("test-kek")
 
 
 @dataclass

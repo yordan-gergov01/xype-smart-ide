@@ -25,6 +25,12 @@ class BackendSettings(PostgresSettings):
     redis_password: SecretStr
     redis_socket_timeout_seconds: float = Field(default=2.0, gt=0, le=60)
 
+    # The non-evicting key store for session keys, on its own network (ADR-0015).
+    keystore_host: str
+    keystore_port: int = Field(default=6379, ge=1, le=65535)
+    keystore_user: str
+    keystore_password: SecretStr
+
     rabbitmq_host: str
     # AMQPS: the broker has no plaintext listener (ADR-0036).
     rabbitmq_port: int = Field(default=5671, ge=1, le=65535)
@@ -51,7 +57,17 @@ class BackendSettings(PostgresSettings):
     # Failed logins per client id and minute before it must wait.
     auth_login_failures_per_minute: int = Field(default=10, ge=1, le=1000)
 
-    @field_validator("auth_signing_key_previous", "auth_pepper_previous", mode="before")
+    # Session keys (ADR-0015): wrapped under the KEK in the key store; the previous KEK
+    # only unwraps, during a rotation (docs/runbooks/key-rotation.md).
+    kek_current: KeyedSecret
+    kek_previous: KeyedSecret | None = None
+    session_keys_per_minute: int = Field(default=10, ge=1, le=1000)
+    # Minting one more revokes the user's oldest key.
+    session_keys_max_active: int = Field(default=8, ge=1, le=64)
+
+    @field_validator(
+        "auth_signing_key_previous", "auth_pepper_previous", "kek_previous", mode="before"
+    )
     @classmethod
     def _empty_is_none(cls, value: object) -> object:
         return None if value == "" else value

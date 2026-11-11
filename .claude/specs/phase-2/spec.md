@@ -46,12 +46,17 @@ on later changes. A privacy suite proves that no plaintext lands anywhere on the
 
 Every slice that adds a message naming a repository adds a cross-team negative test.
 
+Carried forward from slice 5b:
+- Slice 6: call `check_key_age` (12 h) and the use-count limit on `Hello` and on each payload; the stream closes with `TokenRefreshRequired` or a fixed `StreamError` when the key is too old.
+- Slice 7: `/session-key` takes `repository_ids` and returns the wrapped repository keys (additive: the request model forbids unknown fields today).
+- Slice 8: the indexer's `keystore` ACL user (`-@all +get %R~xype:sk:*`), the indexer joins `keys`, and the compose test's `keys` members become `{keystore, backend, indexer}`; re-measure `keystore` memory.
+
 Carried forward from slice 3 (review):
-- Slice 5b: enforce the 12-hour maximum session-key age from `created_at`.
+- Slice 5b (done: `check_key_age` and `expires_at`; the calls move to slice 6, above): enforce the 12-hour maximum session-key age from `created_at`.
 - Slice 6: the revocation subscriber closes the matching streams (the publisher lands in 5a); the backend's Redis ACL gains `+subscribe` for `xype:auth:revoked`; the edge proxy rate-limits stream opens per IP.
 - Slice 8: record a received nonce counter only after `CryptoBox.open` succeeded (the first payload is opened in the indexer).
 - Slice 6: the gRPC server serves TLS with the backend's certificate and the edge proxy forwards with `grpc_pass grpcs://` and `grpc_ssl_verify on` (ADR-0036).
-- Slice 5b: the `keystore` Redis gets its own leaf (`SERVICES` in `server/devtools/dev_ca.py`; existing CAs need `--rotate-ca`), TLS-only like `redis`, and the key-store client uses `common_lib.tls`; its backend ACL allows `EVALSHA`/`SCRIPT LOAD`.
+- Slice 5b (done): the `keystore` Redis gets its own leaf (`SERVICES` in `server/devtools/dev_ca.py`; existing CAs need `--rotate-ca`), TLS-only like `redis`, and the key-store client uses `common_lib.tls`; its backend ACL allows `EVALSHA`/`SCRIPT LOAD`.
 - Slice 8: the indexer image includes `packages/scrub-rules/rules.json`; the re-check refuses chunks over 64 KiB and runs in `asyncio.to_thread`; `cryptography` goes into the indexer's requirements.
 
 ## Privacy rules for every slice

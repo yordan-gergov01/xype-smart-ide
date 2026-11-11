@@ -19,7 +19,11 @@ import sys
 from collections.abc import Awaitable, Callable
 
 from backend.core.auth import auth_dependencies, client_admin
-from backend.core.connections import create_database, create_redis_client
+from backend.core.connections import (
+    create_database,
+    create_keystore_client,
+    create_redis_client,
+)
 from backend.core.settings import BackendSettings
 from backend.services.auth import AuthError, ClientAdmin, NewClient, Role
 from common_lib.clock import SystemClock
@@ -86,12 +90,15 @@ async def _run(command: Command, args: argparse.Namespace) -> str:
     # INFO: the admin actions are logged (ids only) as an audit trail.
     configure_logging(service="admin-cli", level="INFO", log_format=settings.log_format)
     database, redis = create_database(settings), create_redis_client(settings)
+    keystore = create_keystore_client(settings)
     try:
-        deps = auth_dependencies(settings, database, redis)
+        # Disabling a client or rotating its secret also deletes its session keys.
+        deps = auth_dependencies(settings, database, redis, keystore)
         return await command(client_admin(settings, deps, SystemClock()), args)
     finally:
         await database.dispose()
         await redis.aclose()
+        await keystore.aclose()
 
 
 def main(argv: list[str] | None = None) -> int:

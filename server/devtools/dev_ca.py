@@ -26,7 +26,7 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 DEFAULT_DIR = Path(__file__).resolve().parents[2] / "deploy" / "certs"
 # Services that terminate TLS (the edge proxy, the backend and the stores).
-SERVICES = ("edge", "backend", "postgres", "redis", "rabbitmq")
+SERVICES = ("edge", "backend", "postgres", "redis", "keystore", "rabbitmq")
 # Every leaf also answers on these names: healthchecks and tests connect over loopback.
 LOOPBACK_DNS = "localhost"
 LOOPBACK_IP = ipaddress.ip_address("127.0.0.1")

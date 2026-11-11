@@ -27,6 +27,10 @@ class KeyBoundElsewhereError(SecurityError):
     """The session key is bound to another stream (ADR-0015, one key per stream)."""
 
 
+class KeyRevokedError(SecurityError):
+    """The user or token family was revoked moments ago; no new session key for it."""
+
+
 class DuplicateKeyError(SecurityError):
     """A session key with this id already exists; keys are never overwritten."""
 

@@ -23,7 +23,7 @@ Conventions:
 | router | `ModelRouter` | `backend/services/router/` |
 | prompts | `PromptRegistry` | `backend/services/prompts/`; templates as files in `server/prompts/` |
 | security | `CryptoBox`, `SecretScrubber`, `KeyStore`, `hmac_id` | `common_lib/security/` (implemented; shared by the backend and the indexer), `KeyStore` adapter `common_lib/keystore/` (Redis only); client side in `clients/xype-ai` |
-| auth | `CredentialVerifier`, `UserStore`, `RefreshTokenStore`, `RateLimiter`, `RevocationPublisher`; values `Principal`, `Credential`, `AccessClaims` | `backend/services/auth/` (seams), `backend/dal/auth/` (adapters), `common_lib/auth.py` (values and errors) |
+| auth | `CredentialVerifier`, `UserStore`, `RefreshTokenStore`, `RateLimiter`, `RevocationPublisher`; values `Principal`, `Credential`, `AccessClaims`; `SessionKeyService` (`/session-key`, ADR-0015) | `backend/services/auth/` (seams), `backend/dal/auth/` (adapters), `common_lib/auth.py` (values and errors) |
 | connectors | `ConnectorClient` | `backend/services/connectors/` (Protocols), adapters wired in `backend/main.py` |
 | observability | `Metrics` | `common_lib` (used by every service); added when services emit metrics; HTTP metrics live in the transport layer (ADR-0011) |
 | health | `DependencyProbe` | `backend/services/health/` (implemented): `name`, `async check()` raising `DependencyUnavailableError`; adapters in `backend/dal/health/`, `backend/messaging/health.py` |
@@ -305,14 +305,19 @@ class SessionKeyRecord:          # who a key belongs to; never the key
 class KeyStore(Protocol):
     """Session keys wrapped under the KEK in the `keystore` Redis (ADR-0015).
     Server side only: counters are allocated for s2c and recorded for c2s."""
-    async def put(self, record: SessionKeyRecord, key: SecretBytes, *, ttl_seconds: int) -> None: ...
+    async def put(self, record: SessionKeyRecord, key: SecretBytes, *, ttl_seconds: int,
+                  max_active: int, credentials_issued_at: datetime) -> None:
+        """Never overwrites; refuses a revoked family or user (KeyRevokedError); then
+        deletes the user's oldest other keys over `max_active`."""
     async def get(self, key_id: str) -> tuple[SessionKeyRecord, SecretBytes]: ...   # caller wipes
     async def bind_stream(self, key_id: str, session_id: str) -> None: ...  # one key, one stream
     async def advance_nonce(self, key_id: str, direction: Direction, counter: int) -> None:
         """Refuses a counter that is not above the highest seen."""
     async def next_counter(self, key_id: str, direction: Direction) -> int: ...  # atomic
-    async def revoke_user(self, user_id: str) -> None: ...
-    async def revoke_family(self, family_id: str) -> None: ...
+    async def revoke_user(self, user_id: str, *, refuse_issued_until: datetime) -> None: ...  # + tombstone
+    async def revoke_family(self, family_id: str) -> None: ...  # + tombstone
+
+def check_key_age(record: SessionKeyRecord, now: datetime) -> None: ...  # 12 h, streams only
 
 ```
 

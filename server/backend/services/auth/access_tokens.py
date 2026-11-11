@@ -104,16 +104,15 @@ class AccessTokenIssuer:
                 },
             )
             access = _claims(claims)
-            self._check_times(int(str(claims["iat"])), access.expires_at)
+            self._check_times(access.issued_at, access.expires_at)
             return access
         except (jwt.PyJWTError, ValueError, TypeError, KeyError):
             raise InvalidTokenError from None
 
-    def _check_times(self, issued_at: int, expires_at: datetime) -> None:
+    def _check_times(self, issued_at: datetime, expires_at: datetime) -> None:
         now = self._clock.now()
         skew = timedelta(seconds=CLOCK_SKEW_SECONDS)
-        issued = datetime.fromtimestamp(issued_at, tz=UTC)
-        if expires_at + skew <= now or issued - skew > now:
+        if expires_at + skew <= now or issued_at - skew > now:
             raise InvalidTokenError
 
 
@@ -125,4 +124,5 @@ def _claims(claims: dict[str, object]) -> AccessClaims:
         role=ROLES[str(claims["role"])],
     )
     expires_at = datetime.fromtimestamp(int(str(claims["exp"])), tz=UTC)
-    return AccessClaims(principal, uuid.UUID(str(claims["fam"])), expires_at)
+    issued_at = datetime.fromtimestamp(int(str(claims["iat"])), tz=UTC)
+    return AccessClaims(principal, uuid.UUID(str(claims["fam"])), expires_at, issued_at)

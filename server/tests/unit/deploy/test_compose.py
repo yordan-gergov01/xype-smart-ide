@@ -27,7 +27,7 @@ OPEN_NETWORK_MEMBERS = {
     "edge": {"edge"},
 }
 # Stores, broker and models are reached only from inside the stack.
-NO_PORTS = {"postgres", "redis", "rabbitmq", "ollama", "backend", "migrate"}
+NO_PORTS = {"postgres", "redis", "keystore", "rabbitmq", "ollama", "backend", "migrate"}
 PINNED_IMAGE = re.compile(r"^[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}$")
 
 
@@ -112,7 +112,7 @@ def test_default_memory_budget_leaves_room_for_the_workers() -> None:
 
 # --- TLS with the local dev CA (ADR-0036) -------------------------------------------
 # Services that terminate TLS, each with its own certificate directory.
-TLS_SERVERS = {"edge", "backend", "postgres", "redis", "rabbitmq"}
+TLS_SERVERS = {"edge", "backend", "postgres", "redis", "keystore", "rabbitmq"}
 # Services that only verify servers and get the CA certificate alone.
 TLS_CLIENTS_ONLY = {"migrate", "prometheus"}
 
@@ -178,3 +178,21 @@ def test_prometheus_scrapes_the_backend_over_verified_https() -> None:
     (job,) = [j for j in config["scrape_configs"] if j["job_name"] == "backend"]
     assert job["scheme"] == "https"
     assert job["tls_config"] == {"ca_file": "/etc/prometheus/ca.crt", "server_name": "backend"}
+
+
+def test_the_key_store_is_reached_only_over_its_own_network() -> None:
+    """Session keys never share a store or a network with the ciphertext (ADR-0015)."""
+    assert SERVICES["keystore"]["networks"] == ["keys"]
+    assert COMPOSE["networks"]["keys"] == {"internal": True}
+    members = {name for name, s in SERVICES.items() if "keys" in s.get("networks", [])}
+    assert members == {"keystore", "backend"}
+    assert SERVICES["keystore"]["environment"]["REDIS_MODE"] == "keystore"
+    assert SERVICES["redis"]["environment"]["REDIS_MODE"] == "cache"
+
+
+def test_the_key_store_never_evicts_and_scopes_the_backend_to_its_keys() -> None:
+    script = (DEPLOY / "docker" / "redis" / "entrypoint.sh").read_text("utf-8")
+    keystore = script[script.index("    keystore)") : script.index("    *)")]
+    assert "maxmemory-policy noeviction" in keystore
+    assert 'scope="resetchannels ~xype:sk*"' in keystore
+    assert 'extra=""' in keystore

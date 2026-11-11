@@ -16,6 +16,7 @@ from common_lib.security.errors import (
     KeyBoundElsewhereError,
     KeyExchangeError,
     KeyNotFoundError,
+    KeyRevokedError,
     NonceError,
     ScrubTimeoutError,
     SecurityError,
@@ -31,16 +32,26 @@ from common_lib.security.keys import (
     direction_key,
     hkdf,
     new_key,
+    seal_session_key,
     server_exchange,
     unwrap_key,
     wrap_key,
 )
-from common_lib.security.keystore import SESSION_KEY_TTL_SECONDS, KeyStore, SessionKeyRecord
+from common_lib.security.keystore import (
+    REVOCATION_MEMORY_SECONDS,
+    SESSION_KEY_MAX_AGE_SECONDS,
+    SESSION_KEY_TTL_SECONDS,
+    KeyStore,
+    SessionKeyRecord,
+    check_key_age,
+)
 from common_lib.security.obfuscation import IdDomain, hmac_id
 from common_lib.security.scrubber import ScrubResult, ScrubRules, SecretScrubber, load_rules
 
 __all__ = [
     "MAX_ENCRYPTIONS_PER_DIRECTION",
+    "REVOCATION_MEMORY_SECONDS",
+    "SESSION_KEY_MAX_AGE_SECONDS",
     "SESSION_KEY_TTL_SECONDS",
     "CryptoBox",
     "DecryptionError",
@@ -55,6 +66,7 @@ __all__ = [
     "KeyBoundElsewhereError",
     "KeyExchangeError",
     "KeyNotFoundError",
+    "KeyRevokedError",
     "KeyStore",
     "NonceError",
     "PayloadContext",
@@ -65,6 +77,7 @@ __all__ = [
     "SecurityError",
     "SessionKeyRecord",
     "WrappedKey",
+    "check_key_age",
     "counter_of",
     "direction_key",
     "frame",
@@ -73,6 +86,7 @@ __all__ = [
     "load_rules",
     "new_key",
     "nonce_for",
+    "seal_session_key",
     "server_exchange",
     "unwrap_key",
     "wrap_key",
