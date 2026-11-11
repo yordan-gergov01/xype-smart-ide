@@ -27,7 +27,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(unique=True)
     display_name: Mapped[str]
     role: Mapped[str] = mapped_column(server_default="developer")
-    # Client credentials (ADR-0014); the secret is stored as an argon2id hash only.
+    # Client credentials (ADR-0014). The 256-bit random secret is stored only as
+    # `<pepper id>$<HMAC-SHA256(pepper, secret) hex>`; a slow hash adds nothing for it.
     client_id: Mapped[str] = mapped_column(unique=True)
     client_secret_hash: Mapped[str]
     is_active: Mapped[bool] = mapped_column(server_default=text("true"))
@@ -44,12 +45,19 @@ class RefreshToken(Base):
             "user_id",
             postgresql_where=text("revoked_at IS NULL"),
         ),
+        Index("idx_refresh_tokens_family", "family_id"),
         *hmac_checks("token_hash"),
     )
 
     id: Mapped[uuid_pk]
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # HMAC-SHA256(pepper, token) hex (ADR-0014); the token itself is never stored.
     token_hash: Mapped[str] = mapped_column(CHAR(64), unique=True)
+    # One family per login (IDE window); reuse of a revoked token revokes the family.
+    family_id: Mapped[uuid.UUID]
+    # The family's absolute limit (90 days), copied onto every token of the family, so it
+    # survives the deletion of older rows.
+    family_expires_at: Mapped[datetime]
     expires_at: Mapped[datetime]
     revoked_at: Mapped[datetime | None]
     created_at: Mapped[created_at]

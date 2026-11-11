@@ -73,6 +73,7 @@ Dependency notes:
 - Done in slice 7 (ADR-0012): network guard in the test suite, paid-configuration check, integration tests, dependency scan and SBOM in CI.
 - Run the embedder integration test (`models` marker) in CI once a cached model volume is affordable there.
 - Review accepted vulnerabilities in `osv-scanner.toml` before they expire (first: 2027-01-31).
+- Behind a hosted load balancer, set `set_real_ip_from` in the edge proxy so the per-IP auth limit (ADR-0014) sees client addresses, not the balancer's.
 - Strip userinfo from `repositories.remote_url` at the registration API, with a test (Phase 2).
 
 ## 4. Risks

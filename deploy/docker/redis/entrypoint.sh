@@ -6,8 +6,9 @@
 #
 # Users: `default` (password REDIS_PASSWORD) is for the container healthcheck and
 # operators; each service gets its own ACL user: read, write and connection
-# commands only (no dangerous, admin or scripting ones), keys under `xype:` only,
-# no pub/sub channels.
+# commands only (no dangerous or admin ones), keys under `xype:` only. Of scripting,
+# only EVALSHA and SCRIPT LOAD (the rate limiter's script, ADR-0014); of pub/sub, only
+# PUBLISH to the one revocation channel.
 set -eu
 
 require() {
@@ -53,7 +54,7 @@ tls-ca-cert-file /certs/ca.crt
 tls-auth-clients no
 tls-protocols "TLSv1.2 TLSv1.3"
 requirepass $REDIS_PASSWORD
-user $REDIS_BACKEND_USER on >$REDIS_BACKEND_PASSWORD resetchannels ~xype:* +@read +@write +@fast +@connection -@dangerous -@admin -@scripting
+user $REDIS_BACKEND_USER on >$REDIS_BACKEND_PASSWORD resetchannels &xype:auth:revoked ~xype:* +@read +@write +@fast +@connection -@dangerous -@admin -@scripting -@pubsub +evalsha +script|load +publish
 save ""
 appendonly no
 maxmemory 64mb

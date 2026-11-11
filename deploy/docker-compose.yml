@@ -211,6 +211,12 @@ services:
       RABBITMQ_USER: ${RABBITMQ_BACKEND_USER:?RABBITMQ_BACKEND_USER must be set}
       RABBITMQ_PASSWORD: ${RABBITMQ_BACKEND_PASSWORD:?RABBITMQ_BACKEND_PASSWORD must be set}
       TLS_CA_FILE: /certs/ca.crt
+      # Auth (ADR-0014); generate each with `backend.admin_cli new-key` (local-dev runbook).
+      AUTH_SIGNING_KEY_CURRENT: ${AUTH_SIGNING_KEY_CURRENT:?generate AUTH_SIGNING_KEY_CURRENT, see docs/runbooks/local-dev.md}
+      AUTH_SIGNING_KEY_PREVIOUS: ${AUTH_SIGNING_KEY_PREVIOUS:-}
+      AUTH_PEPPER_CURRENT: ${AUTH_PEPPER_CURRENT:?generate AUTH_PEPPER_CURRENT, see docs/runbooks/local-dev.md}
+      AUTH_PEPPER_PREVIOUS: ${AUTH_PEPPER_PREVIOUS:-}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-200}
     # Serves TLS with this certificate (the image's command) and verifies the stores.
     volumes:
       # Fails at start when the dev CA was not created (docs/runbooks/local-dev.md).

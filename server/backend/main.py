@@ -10,16 +10,22 @@ from contextlib import AsyncExitStack, asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
+from opentelemetry.trace import Tracer
 from prometheus_client import CollectorRegistry
 from redis.asyncio import Redis
 
+from backend.api.auth import router as auth_router
+from backend.api.errors import register_error_handlers
 from backend.api.health import router as health_router
 from backend.api.middleware import HttpMetrics, RequestContextMiddleware, UnhandledErrorMiddleware
+from backend.core.auth import auth_dependencies, auth_service
 from backend.core.connections import Database, create_database, create_redis_client
 from backend.core.settings import BackendSettings
 from backend.dal.health import DatabaseProbe, RedisProbe
 from backend.messaging.health import BrokerProbe
+from backend.services.auth import AuthDependencies
 from backend.services.health import DependencyProbe, HealthService
+from common_lib.clock import Clock, SystemClock
 from common_lib.logging_config import configure_logging
 from common_lib.settings import load_settings
 from common_lib.tracing import configure_tracing
@@ -43,6 +49,8 @@ def create_app(
     settings: BackendSettings | None = None,
     *,
     probes: Sequence[DependencyProbe] | None = None,
+    auth: AuthDependencies | None = None,
+    clock: Clock | None = None,
 ) -> FastAPI:
     """Build the app. Settings come from the environment unless given; tests pass fakes."""
     settings = settings or load_settings(BackendSettings)
@@ -56,6 +64,8 @@ def create_app(
     redis = create_redis_client(settings)
     if probes is None:
         probes = _default_probes(settings, database, redis)
+    clock = clock or SystemClock()
+    auth = auth or auth_dependencies(settings, database, redis)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -78,13 +88,16 @@ def create_app(
     app.state.health_service = HealthService(
         probes, timeout_seconds=settings.readiness_timeout_seconds
     )
-    app.include_router(health_router)
+    app.state.auth_service = auth_service(settings, auth, clock)
+    _mount(app, tracer_provider.get_tracer(SERVICE_NAME), HttpMetrics(registry))
+    return app
 
+
+def _mount(app: FastAPI, tracer: Tracer, metrics: HttpMetrics) -> None:
+    """Routes, error handlers and middleware."""
+    app.include_router(health_router)
+    app.include_router(auth_router)
+    register_error_handlers(app)
     # Starlette runs the last added middleware first, so this list is innermost first.
     app.add_middleware(UnhandledErrorMiddleware)
-    app.add_middleware(
-        RequestContextMiddleware,
-        tracer=tracer_provider.get_tracer(SERVICE_NAME),
-        metrics=HttpMetrics(registry),
-    )
-    return app
+    app.add_middleware(RequestContextMiddleware, tracer=tracer, metrics=metrics)

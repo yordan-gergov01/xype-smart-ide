@@ -32,7 +32,7 @@ Chosen option: **1**, because it keeps the hot path local (one signature check) 
 ### Credentials
 
 - An admin runs a backend CLI (`create-client`, `disable-client`, `rotate-secret`). It creates a `users` row with `client_id` and a random 256-bit `client_secret`, and prints the secret once.
-- The secret is stored as `HMAC-SHA256(pepper, secret)` with the pepper id (`users.client_secret_hash`). A slow password hash adds nothing for a 256-bit random secret, and would make the login endpoint a CPU target. The model comment in `tenancy.py` is updated in slice 5.
+- The secret is stored as `HMAC-SHA256(pepper, secret)` with the pepper id (`users.client_secret_hash`). A slow password hash adds nothing for a 256-bit random secret, and would make the login endpoint a CPU target.
 - The admin dashboard (Phase 7) calls the same service.
 - The extension keeps `client_secret` and its refresh token in VS Code `SecretStorage` (the OS keychain), never in settings or files.
 
@@ -80,7 +80,28 @@ Chosen option: **1**, because it keeps the hot path local (one signature check) 
   - Each REST call and each client-initiated stream message counts once.
   - A refused request gets `429`, or `StreamError.CODE_RATE_LIMITED` with `retry_after_ms`.
   - The key holds the user id only, never a token.
-- **Unauthenticated.** Token, refresh and stream-open attempts are limited per source IP, plus an increasing backoff per `client_id` after failures. The backoff slows guessing without letting an attacker lock a real developer out.
+- **Unauthenticated.** Token, refresh and stream-open attempts are limited per source IP, plus a backoff per `client_id` after failures. The backoff slows guessing. Its trade-off: someone who knows a `client_id` can keep that client's *new* logins refused for as long as they keep failing, while windows that are already logged in keep refreshing (implementation notes).
+
+### Implementation notes (Phase 2 slice 5a)
+
+- **Formats.** `client_id` is `xc_` plus 16 hex characters; the secret is `xcs_` plus 43 base64url characters (256 bits); the refresh token is `xrt_` plus 43 base64url characters. The prefixes let people and secret scanners recognise a leaked value. `users.client_secret_hash` is `<pepper id>$<hex HMAC>`. A refresh token is stored as the hex HMAC under the current pepper; on refresh, the hashes under every configured pepper are tried.
+- **Keys** come from the environment as `<id>:<32 bytes, base64url>` (`python -m backend.admin_cli new-key <id>`). Values with fewer than 8 distinct bytes are refused, and `.env.example` ships no placeholder.
+- **`GET /api/v1/auth/me`** returns the principal, so the extension can check its credentials. It is the first authenticated route and counts against the per-user limit.
+- **Concurrent refresh.** Within one family, the second of two concurrent refreshes sees a revoked token and revokes the family, so both callers must log in again. That is the price of reuse detection. Each IDE window has its own family, so windows never trip it.
+- **Family limit.** `refresh_tokens.family_expires_at` is copied onto every token of a family, so the 90-day limit holds even after older rows are deleted.
+- **Rate limits.**
+  - The GCRA script takes "now" from the gateway's clock, so tests control it. Replica clocks must be NTP-synchronised.
+  - Failed logins count per `client_id`: 10 per minute (`AUTH_LOGIN_FAILURES_PER_MINUTE`), after which the client waits about 6 seconds per extra failure. Successful logins never count. The bucket key is an HMAC of the client id, not the id itself. An attacker who knows a client id can hold off that client's new logins while the attack lasts (the edge allows 30 attempts per minute per IP); open windows keep refreshing, and the client id alone grants nothing. Keying on the client IP as well needs the edge to forward it, which is a hosting-time change.
+  - Per-IP limits sit in the edge proxy (30 per minute, burst 10, on `/auth/token` and `/auth/refresh`), because the backend sees only the proxy's address. Stream opens get the same in slice 6.
+- **Redis ACL.** The backend's user may call `EVALSHA` and `SCRIPT LOAD`, and `PUBLISH` to `xype:auth:revoked` only. `SUBSCRIBE` is added in slice 6 with the subscriber that closes streams.
+  - Loading and running a script is as powerful as `EVAL`, but every `redis.call` inside it is checked against the same ACL (commands, `xype:` keys, the one channel), so a script gains nothing. A test proves it.
+  - What remains is a CPU-bound script blocking Redis, which only an attacker who already runs code in the backend could load. Preloading Redis Functions at start instead is an option before hosting.
+  - Redis evicts with `allkeys-lru`, so under memory pressure a limiter bucket could be evicted, which fails open for that key. The cache (Phase 3) revisits the eviction policy; until then the limiter's keys are tiny and short-lived.
+- **Refresh locking.** Every rotation and every revocation of a user's tokens, and the first token of a login, first locks that user's `users` row. Without it, revoking a family could miss the token a concurrent rotation was inserting. A login inserts its first token only if, under that lock, the user is still active and still has the secret hash the login was verified against, so a login that verified an old secret just before `rotate-secret` cannot keep a family. `rotate-secret` changes the hash and then revokes. If the revocation fails the CLI reports an error, and running it again is safe.
+- **Admin revocations.** After `disable-client` or `rotate-secret`, each open window's next refresh presents a token that was already revoked, so it takes the reuse path (`auth.refresh.reused`, family revoked again). The outcome is the same; the warning is expected after an admin action.
+- **Access-token time.** Issuing and verifying both use the injected clock, so expiry is tested without waiting; `exp` and `iat` are checked against it with 30 seconds of skew. `AUTH_ACCESS_TTL_S` is capped at 900 seconds, so the 15-minute promise holds.
+- **Errors.** Every failure has a fixed JSON body (the edge proxy's own 429 too): `invalid_credentials`, `invalid_token` (with `WWW-Authenticate: Bearer`), `rate_limited` (with `Retry-After`), `unavailable` (503) and `invalid_request`. The 422 body never repeats the rejected input; FastAPI's default would echo the client secret. Token responses carry `Cache-Control: no-store`.
+- **Library.** PyJWT 2.15.1 with `cryptography`. The `kid` header is resolved only against the local keys, the algorithm is pinned to EdDSA, and `iss`, `aud`, `sub`, `team`, `role`, `fam`, `iat`, `exp` and `jti` are all required.
 
 ### Consequences
 

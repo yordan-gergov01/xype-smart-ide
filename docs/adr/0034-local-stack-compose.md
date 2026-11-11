@@ -63,8 +63,9 @@ Chosen option: **1**.
   database; pgvector is created by the superuser at init; the password reaches psql
   through `\getenv`, never a command line. Redis: config rendered into a tmpfs
   (password, no persistence, `maxmemory 64mb` LRU); each service has its own ACL user (the
-  backend: read, write and connection commands only, keys under `xype:`, and from Phase 2
-  the one revocation channel `xype:auth:revoked`, ADR-0014). It holds no key material:
+  backend: read, write and connection commands only, keys under `xype:`, `EVALSHA` and
+  `SCRIPT LOAD` for the rate limiter, and `PUBLISH` to the one revocation channel
+  `xype:auth:revoked`, ADR-0014). It holds no key material:
   session keys live in the separate `keystore` Redis (`noeviction`, network `keys`,
   ADR-0015).
 - Backend and edge proxy: `pids_limit`, and `/tmp` tmpfs with `noexec,nosuid,nodev`.
