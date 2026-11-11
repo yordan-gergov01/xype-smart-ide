@@ -26,7 +26,7 @@ message MerkleTreeReport {
 }
 
 message MerkleNode {
-  string node_id = 1; // obfuscated (HMAC of path)
+  string node_id = 1; // hmac_id of a dir or file path, or of a chunk position (ADR-0018)
   string hash = 2; // HMAC of the chunk (leaf) or hash over the children's HMACs
   bool is_leaf = 3; // leaf = chunk
   LineRange lines = 4; // for leaves

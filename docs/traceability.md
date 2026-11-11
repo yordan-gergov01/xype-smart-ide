@@ -16,8 +16,8 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3, the XYP
 | T10 | AST chunking with web-tree-sitter (3.4.2) | in progress (grammars for all 7 languages load; chunking in slice 10) | ADR-0017 | `clients/xype-ai/grammars.json`, `clients/xype-ai/scripts/build-grammars.mjs`, `clients/xype-ai/src/context/grammars.ts`; tests: `clients/xype-ai/src/context/grammars.test.ts` |
 | T11 | Call-graph dependent injection (3.4.2) | planned (2) | — | schema: `chunk_edges` in `server/common_lib/models/index.py` |
 | T12 | Client Merkle tree + O(log n) delta sync, 10-min poll (3.4.2, 3.5) | planned (2) | ADR-0018 | flow: `docs/flows/merkle-sync.md` |
-| T13 | Client AES-256-GCM, metadata obfuscation (3.4.2) | planned (2) | ADR-0015, ADR-0016 | — |
-| T14 | Client secret/PII scrubbing before encryption (3.4.2, 3.7) | planned (2) | ADR-0019 | — |
+| T13 | Client AES-256-GCM, metadata obfuscation (3.4.2) | in progress (server side and shared vectors done; client in slice 9) | ADR-0015, ADR-0016 | `server/common_lib/security/`, `server/common_lib/keystore/`, `packages/crypto-vectors/vectors.json`; tests: `server/tests/unit/common_lib/test_security.py`, `server/tests/unit/common_lib/test_crypto_vectors.py`, `server/tests/integration/test_keystore.py` |
+| T14 | Client secret/PII scrubbing before encryption (3.4.2, 3.7) | in progress (shared rules, corpus and server re-check done; client in slice 9) | ADR-0019 | `packages/scrub-rules/`, `server/common_lib/security/scrubber.py`; tests: `server/tests/unit/common_lib/test_scrubber.py` |
 | T15 | Idle-time hashing: > 2 s debounce, 10–15% CPU cap (3.4.2) | planned (2) | — | — |
 | T16 | Gateway: auth, rate limit 200/min, validation; in-memory decrypt for completion and chat, indexing decrypted in the indexer (3.4.3, 3.9) | planned (2) | ADR-0014, ADR-0015 (deviation, Proposed) | — |
 | T17 | Orchestrator: templates, guardrails, retrieval, routing, post-processing, fallbacks (3.4.4) | planned (3, 4, 5) | — | — |

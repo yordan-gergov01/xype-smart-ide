@@ -18,26 +18,27 @@ message Envelope {
   google.protobuf.Timestamp sent_at = 4;
 }
 
-// AES-256-GCM ciphertext produced on the client with a per-session key.
-// The server decrypts only in memory (brief §3.7).
+// AES-256-GCM ciphertext under a per-session key, one derived key per direction
+// (ADR-0015). The server decrypts only in memory (brief §3.7).
 message EncryptedPayload {
   string key_id = 1; // session key id; rotation-aware
-  // 12 random bytes, unique per encryption under the key (several payloads in one message
-  // each get their own); keys rotate well before 2^32 encryptions. The server rejects a
-  // repeated (key_id, nonce) within a session.
+  // 12 bytes: 4 zero bytes and a 64-bit big-endian counter per key and direction
+  // (several payloads in one message each take their own counter). The receiver refuses
+  // a counter that is not above the highest it has seen; keys rotate by 2^24.
   bytes nonce = 2;
   bytes ciphertext = 3; // includes the 16-byte GCM tag
-  // Authenticated, unencrypted bytes binding the payload to its place: message_id,
-  // request id, field number and key_id (ADR-0013). Checked by the receiver.
+  // The framed AAD binding the payload to its place: direction, key_id, message_id,
+  // request id, field number and the ChunkRef (ADR-0015). Informational only: the
+  // receiver rebuilds the AAD from the plain fields and never trusts these bytes.
   bytes aad = 4;
 }
 
 // Obfuscated reference to a code region. No file names or symbols in clear.
 message ChunkRef {
   string repository_id = 1; // server-side UUID of a registered repo
-  string obfuscated_file_id = 2; // HMAC-SHA256(repo_key, normalized_path), hex
+  string obfuscated_file_id = 2; // hmac_id(repo_key, "file", path), framed, hex (ADR-0016)
   LineRange lines = 3;
-  string chunk_hash = 4; // HMAC of chunk content; Merkle leaf
+  string chunk_hash = 4; // hmac_id(repo_key, "chunk-content", scrubbed text); Merkle leaf
 }
 
 message LineRange {

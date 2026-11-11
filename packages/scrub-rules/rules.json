@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "placeholder": "<SECRET_REMOVED>",
+  "max_file_bytes": 1048576,
+  "time_budget_ms_per_mib": 1000,
+  "min_time_budget_ms": 50,
+  "denied_paths": [
+    ".env",
+    ".env.*",
+    "!.env.example",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "*.jks",
+    "*.keystore",
+    "id_rsa*",
+    "id_ed25519*",
+    ".npmrc",
+    ".pypirc",
+    ".netrc",
+    ".git-credentials",
+    "kubeconfig",
+    ".kube/",
+    ".aws/",
+    ".ssh/",
+    ".docker/config.json",
+    "credentials.json",
+    "secrets.yaml",
+    "secrets.yml",
+    "*.tfstate",
+    "*.tfstate.*"
+  ],
+  "rules": [
+    {
+      "id": "private-key",
+      "pattern": "-----BEGIN [A-Z ]{0,32}PRIVATE KEY-----[A-Za-z0-9+/=\\\\\\r\\n \\t:,-]{0,8192}-----END [A-Z ]{0,32}PRIVATE KEY-----",
+      "keywords": ["-----END"]
+    },
+    {
+      "id": "gcp-private-key-id",
+      "pattern": "\"private_key_id\"[ \\t]{0,8}:[ \\t]{0,8}\"([a-f0-9]{40})\"",
+      "secret_group": 1
+    },
+    {
+      "id": "aws-access-key-id",
+      "pattern": "(?:^|[^A-Za-z0-9])((?:AKIA|ASIA)[A-Z0-9]{16})(?![A-Za-z0-9])",
+      "secret_group": 1
+    },
+    {
+      "id": "azure-connection-key",
+      "pattern": "(?:AccountKey|SharedAccessKey)=([A-Za-z0-9+/=]{20,256})",
+      "secret_group": 1,
+      "case_insensitive": true
+    },
+    {
+      "id": "github-token",
+      "pattern": "(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,255}"
+    },
+    {
+      "id": "gitlab-token",
+      "pattern": "glpat-[A-Za-z0-9_-]{20,64}"
+    },
+    {
+      "id": "slack-token",
+      "pattern": "xox[abprs]-[A-Za-z0-9-]{10,200}"
+    },
+    {
+      "id": "stripe-key",
+      "pattern": "(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,128}"
+    },
+    {
+      "id": "llm-api-key",
+      "pattern": "sk-(?:or-v1-|ant-api03-)?[A-Za-z0-9_-]{20,200}"
+    },
+    {
+      "id": "jwt",
+      "pattern": "eyJ[A-Za-z0-9_-]{8,512}\\.eyJ[A-Za-z0-9_-]{8,4096}\\.[A-Za-z0-9_-]{8,4096}",
+      "keywords": [".eyJ"]
+    },
+    {
+      "id": "bearer-token",
+      "pattern": "(?:Bearer|bearer|Token)[ \\t]{1,8}(?=[A-Za-z._~+/-]{0,4096}[0-9])([A-Za-z0-9._~+/-]{16,4096}={0,2})",
+      "secret_group": 1
+    },
+    {
+      "id": "url-userinfo",
+      "pattern": "[A-Za-z][A-Za-z0-9+.-]{0,16}://([^/@ \\t\\r\\n\"'<>]{1,256})@",
+      "secret_group": 1
+    },
+    {
+      "id": "secret-assignment",
+      "pattern": "(?:password|passwd|pwd|secret|token|api_key|apikey|access_key|client_secret|auth_key|private_key)[A-Za-z0-9_]{0,32}[\"']?(?:[ \\t]{0,8}:[ \\t]{0,8}[A-Za-z_][A-Za-z0-9_.\\[\\]]{0,64}(?:[ \\t]{0,4}\\|[ \\t]{0,4}[A-Za-z_][A-Za-z0-9_.\\[\\]]{0,64}){0,4}|[ \\t]{1,8}[A-Za-z_][A-Za-z0-9_.]{0,32})?[ \\t]{0,8}(?:=>|===?|!==?|=|:)[ \\t]{0,8}[\"']?([^ \\t\\r\\n\"'<>,;${(=][^ \\t\\r\\n\"'<>,;]{3,511})(?![^ \\t\\r\\n\"'<>,;])(?![ \\t]{0,8}[=|])",
+      "secret_group": 1,
+      "case_insensitive": true
+    },
+    {
+      "id": "dockerfile-secret",
+      "pattern": "(?:ENV|ARG)[ \\t]{1,8}[A-Za-z0-9_]{0,32}(?:PASSWORD|SECRET|TOKEN|KEY)[A-Za-z0-9_]{0,32}[ \\t]{1,8}([^ \\t\\r\\n=<$][^ \\t\\r\\n<]{3,511})",
+      "secret_group": 1
+    },
+    {
+      "id": "email",
+      "pattern": "[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\\.[A-Za-z0-9-]{1,63}){0,8}\\.[A-Za-z]{2,24}"
+    },
+    {
+      "id": "phone",
+      "pattern": "\\+[1-9](?:[ .-]?[0-9]){6,14}(?![0-9])"
+    }
+  ],
+  "entropy": {
+    "id": "high-entropy",
+    "candidate": "(?:[=:][ \\t]{0,8}[\"'`]?|[\"'`])([A-Za-z0-9+/=_-]{20,4096})",
+    "secret_group": 1,
+    "hex": {
+      "min_length": 32,
+      "threshold": 3.0
+    },
+    "other": [
+      {
+        "min_length": 20,
+        "threshold": 3.5
+      },
+      {
+        "min_length": 40,
+        "threshold": 4.0
+      }
+    ],
+    "other_requires": ["[0-9]", "[A-Za-z]"],
+    "allow": [
+      "^sha(?:1|256|384|512)-",
+      "^(?:[A-Za-z_.-]{1,64}[0-9]{0,2}/){1,32}[A-Za-z_.-]{1,64}[0-9]{0,2}$",
+      "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    ]
+  }
+}

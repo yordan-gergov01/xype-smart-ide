@@ -46,8 +46,9 @@ The scrubber runs over the whole file and preserves line count. Chunking (ADR-00
   - ASCII-explicit classes (`[A-Za-z0-9_]`, never `\w`, `\s` or `.`);
   - no lookbehind, backreferences or inline flags;
   - every repetition bounded (`{0,4096}`, never `*` or `+` over a class that can overlap its neighbour).
-- A repo check rejects patterns outside the subset, and adjacent quantified parts whose character classes overlap (`[A-Za-z]{0,64}[A-Za-z0-9]{0,64}`), which backtrack super-linearly.
-- Each file has a time budget (100 ms per MiB). A file that exceeds it is treated as denied and never sent: scrubbing fails closed.
+- A unit test (`server/tests/unit/common_lib/test_scrubber.py`) rejects patterns outside the subset, and adjacent quantified parts whose character classes overlap (`[A-Za-z]{0,64}[A-Za-z0-9]{0,64}`), which backtrack super-linearly.
+- A rule may list `keywords`; it runs only if the text contains one (`-----END` for key blocks, `.eyJ` for JWTs). This keeps repeated rule prefixes cheap.
+- Each file has a time budget (`time_budget_ms_per_mib` 1 000, at least `min_time_budget_ms` 50), measured on the input size. Measured on 2026-11-10 in Python, per MiB: about 0.37 s of real code; up to about 0.7 s for the 1 MiB pathological tests; and up to about 2 s for hostile input built to defeat the keyword filter (repeated key headers ending in one `-----END`, repeated `eyJ` ending in `.eyJ`). All are linear. A file over its budget is treated as denied and never sent: scrubbing fails closed. Python cannot interrupt a running match, so the bounded subset is the real protection and the budget is the last check. The server re-check runs per chunk, which the indexer caps at 64 KiB (slice 8), and in `asyncio.to_thread`. Headroom for real code is under 3× the budget, so a heavily loaded machine could deny a large legitimate file; the chunk cap keeps the server side far from it, and a client denial is reported, not silent.
 
 **Coverage of the first rule set:**
 - private key blocks (`-----BEGIN … PRIVATE KEY-----` to `END`, with a bounded body);
@@ -55,7 +56,9 @@ The scrubber runs over the whole file and preserves line count. Chunking (ADR-00
 - version-control and CI tokens (GitHub, GitLab), Slack, Stripe, and the paid LLM keys of `tools/paid_api_hosts.txt`;
 - JWTs;
 - URLs with userinfo (`scheme://user:pass@`);
-- `password`, `secret`, `token` and `api_key` assignments in code, YAML, `.env` and Dockerfile syntax;
+- `password`, `secret`, `token`, `api_key`, `private_key` and similar assignments in code, YAML, `.env` and Dockerfile syntax, including typed ones (`password: str = …`, `const token: string = …`);
+- `Bearer` and `Token` credentials in headers;
+- private keys inside JSON strings (`\n` escapes, as in service-account files);
 - email addresses and international phone numbers (PII).
 
 **Entropy.**
@@ -65,7 +68,8 @@ The scrubber runs over the whole file and preserves line count. Chunking (ADR-00
   - hex: ≥ 3.0 bits per character for 32 characters or more;
   - base64-like: ≥ 3.5 for 20–39 characters, ≥ 4.0 for 40 or more.
 - Thresholds are tuned only against the corpus.
-- An allow-list (lockfile integrity hashes, git SHAs in known positions, UUIDs outside an assignment) applies to entropy matches only. Keyword rules such as `api_key = <uuid>` take precedence over it.
+- A non-hex candidate must contain both a digit and a letter, so identifiers and words in strings (`"DefaultEndpointsProtocol"`) are not scrubbed.
+- An allow-list applies to entropy matches only: lockfile integrity hashes (`sha512-…`), UUIDs, and paths whose segments are words with at most two trailing digits (`src/components/Header-v2`). Keyword rules such as `api_key = <uuid>` run first and take precedence over it.
 
 **Output.**
 - Each match is replaced with `<SECRET_REMOVED>` and the line count is kept, so line ranges stay valid.
@@ -90,7 +94,7 @@ The scrubber runs over the whole file and preserves line count. Chunking (ADR-00
 
 ### Confirmation
 
-- A shared corpus in `packages/scrub-rules/corpus/` holds positive and negative cases. All of them are synthetic, never a real secret, and gitleaks allow-lists that path only.
+- A shared corpus in `packages/scrub-rules/corpus.json` holds positive and negative cases. All of them are synthetic, never a real secret, and each input and expected text is stored as fragments of at most 8 characters that the tests join, so no secret scanner (gitleaks, GitHub push protection) sees a whole token and no allow-list is needed.
 - The corpus includes:
   - secrets that straddle chunk boundaries;
   - hex keys of 32 and 40 characters, and a UUID used as a key;

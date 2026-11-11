@@ -18,8 +18,8 @@ message CompletionRequest {
   // Encrypted CompletionContext (below), serialized then encrypted.
   EncryptedPayload context = 5;
   uint32 max_tokens = 6;
-  // HMAC-SHA256 under a team-scoped key (not a plain hash: short boilerplate could be
-  // reversed by dictionary); the boilerplate cache key (brief §3.8).
+  // A keyed hash, not a plain one (short boilerplate could be reversed by dictionary);
+  // the boilerplate cache key (brief §3.8). Its key is decided in ADR-0021 (Phase 3).
   string snippet_hash = 7;
 }
 
