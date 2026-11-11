@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
@@ -20,20 +19,18 @@ from pydantic import SecretStr
 from sqlalchemy import URL, Connection, text
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import create_async_engine
-from testcontainers.community.postgres import PostgresContainer
+from support import containers
+from support.tls import ca_file
 
 from common_lib.models import Base
 from common_lib.models.connection import postgres_url
 from common_lib.settings import PostgresSettings
+from common_lib.tls import client_context
 
 pytestmark = pytest.mark.integration
 
 ROOT = Path(__file__).resolve().parents[3]
 SERVER = ROOT / "server"
-INITDB = ROOT / "deploy" / "docker" / "postgres" / "initdb"
-IMAGE = yaml.safe_load((ROOT / "deploy" / "docker-compose.yml").read_text("utf-8"))["services"][
-    "postgres"
-]["image"]
 ROLES = {
     "POSTGRES_OWNER_USER": "xype_owner",
     "POSTGRES_OWNER_PASSWORD": "test-only-owner",
@@ -44,12 +41,13 @@ ROLES = {
 
 @pytest.fixture(scope="module")
 def database() -> Iterator[dict[str, Any]]:
-    container = PostgresContainer(
-        IMAGE, username="postgres", password="test-only-super", dbname="xype", driver=None
-    ).with_volume_mapping(str(INITDB), "/docker-entrypoint-initdb.d", "ro")
-    for name, value in ROLES.items():
-        container = container.with_env(name, value)
-    with container:
+    env = {
+        "POSTGRES_USER": "postgres",
+        "POSTGRES_PASSWORD": "test-only-super",
+        "POSTGRES_DB": "xype",
+        **ROLES,
+    }
+    with containers.postgres(env, initdb=True) as container:
         yield {
             "host": container.get_container_host_ip(),
             "port": int(container.get_exposed_port(5432)),
@@ -63,6 +61,7 @@ def _url(database: dict[str, Any], user: str, password: str) -> URL:
         db_name="xype",
         db_user=user,
         db_password=SecretStr(password),
+        tls_ca_file=ca_file(),
     )
     return postgres_url(settings)
 
@@ -75,6 +74,7 @@ def _alembic(database: dict[str, Any], *commands: tuple[str, str]) -> None:
         "DB_USER": ROLES["POSTGRES_OWNER_USER"],
         "DB_PASSWORD": ROLES["POSTGRES_OWNER_PASSWORD"],
         "LOG_LEVEL": "WARNING",
+        "TLS_CA_FILE": str(ca_file()),
     }
     saved = {k: os.environ.get(k) for k in env}
     os.environ.update(env)
@@ -92,7 +92,7 @@ def _alembic(database: dict[str, Any], *commands: tuple[str, str]) -> None:
 
 def _with_connection(url: URL, action: Any) -> Any:  # reason: any sync callback
     async def run() -> Any:  # reason: returns the callback's result
-        engine = create_async_engine(url)
+        engine = create_async_engine(url, connect_args={"ssl": client_context(ca_file())})
         try:
             async with engine.connect() as connection:
                 result = await connection.run_sync(action)

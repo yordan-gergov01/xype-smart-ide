@@ -12,6 +12,7 @@ from backend.core.settings import BackendSettings
 from backend.main import create_app
 from backend.services.health import DependencyProbe
 from common_lib.errors import DependencyUnavailableError
+from support.tls import ca_file
 
 
 class FakeProbe:
@@ -54,6 +55,7 @@ def make_settings(**overrides: object) -> BackendSettings:
         "rabbitmq_password": "not-a-secret-broker",
         "log_format": "json",
         "readiness_timeout_seconds": 0.2,
+        "tls_ca_file": ca_file(),
     }
     values.update(overrides)
     return BackendSettings.model_validate(values)

@@ -24,7 +24,8 @@ class BackendSettings(PostgresSettings):
     redis_socket_timeout_seconds: float = Field(default=2.0, gt=0, le=60)
 
     rabbitmq_host: str
-    rabbitmq_port: int = Field(default=5672, ge=1, le=65535)
+    # AMQPS: the broker has no plaintext listener (ADR-0036).
+    rabbitmq_port: int = Field(default=5671, ge=1, le=65535)
     rabbitmq_vhost: str
     rabbitmq_user: str
     rabbitmq_password: SecretStr

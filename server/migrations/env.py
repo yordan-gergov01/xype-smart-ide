@@ -15,6 +15,7 @@ from common_lib.logging_config import configure_logging
 from common_lib.models import Base
 from common_lib.models.connection import postgres_url
 from common_lib.settings import PostgresSettings, load_settings
+from common_lib.tls import client_context
 
 
 def _run(connection: Connection) -> None:
@@ -33,7 +34,9 @@ def _run(connection: Connection) -> None:
 
 
 async def _migrate(settings: PostgresSettings) -> None:
-    engine = create_async_engine(postgres_url(settings))
+    engine = create_async_engine(
+        postgres_url(settings), connect_args={"ssl": client_context(settings.tls_ca_file)}
+    )
     try:
         async with engine.connect() as connection:
             await connection.run_sync(_run)

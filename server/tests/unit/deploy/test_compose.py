@@ -108,3 +108,73 @@ def test_default_memory_budget_leaves_room_for_the_workers() -> None:
     total = sum(int(s["mem_limit"][:-1]) * units[s["mem_limit"][-1]] for s in default)
     # 4 GiB in total, of which about 600 MiB are kept for the workers (llm, indexer).
     assert total <= 4096 - 600, f"{total} MiB"
+
+
+# --- TLS with the local dev CA (ADR-0036) -------------------------------------------
+# Services that terminate TLS, each with its own certificate directory.
+TLS_SERVERS = {"edge", "backend", "postgres", "redis", "rabbitmq"}
+# Services that only verify servers and get the CA certificate alone.
+TLS_CLIENTS_ONLY = {"migrate", "prometheus"}
+
+
+def _sources(service: dict[str, Any]) -> list[str]:
+    return [v if isinstance(v, str) else v["source"] for v in service.get("volumes", [])]
+
+
+@pytest.mark.parametrize("name", sorted(SERVICES))
+def test_services_get_only_their_own_certificate(name: str) -> None:
+    mounts = [v for v in SERVICES[name].get("volumes", []) if isinstance(v, dict)]
+    mounts = [m for m in mounts if m["type"] == "bind"]
+    if name in TLS_SERVERS:
+        expected = f"./certs/{name}"
+    elif name in TLS_CLIENTS_ONLY:
+        expected = "./certs/ca.crt"
+    else:
+        assert mounts == []
+        return
+    assert [m["source"] for m in mounts if m["type"] == "bind"] == [expected]
+    (mount,) = mounts
+    assert mount["read_only"] is True
+    # Linux: a missing dev CA fails the start. Docker Desktop creates an empty folder
+    # instead, and the services then stop on the missing files (local-dev runbook).
+    assert mount["bind"]["create_host_path"] is False
+    assert not any("ca.key" in source for source in _sources(SERVICES[name]))
+
+
+@pytest.mark.parametrize("name", ["backend", "migrate"])
+def test_store_clients_verify_against_the_dev_ca(name: str) -> None:
+    assert SERVICES[name]["environment"]["TLS_CA_FILE"] == "/certs/ca.crt"
+
+
+def test_stores_have_no_plaintext_listener() -> None:
+    docker = DEPLOY / "docker"
+    redis = (docker / "redis" / "entrypoint.sh").read_text("utf-8")
+    assert re.search(r"^port 0$", redis, re.MULTILINE)
+    assert "tls-port 6379" in redis
+    broker = (docker / "rabbitmq" / "conf.d" / "20-xype.conf").read_text("utf-8")
+    assert "listeners.tcp = none" in broker
+    hba = (docker / "postgres" / "pg_hba.conf").read_text("utf-8").splitlines()
+    rules = [line.split() for line in hba if line and not line.startswith("#")]
+    assert {r[0] for r in rules} == {"local", "hostssl", "hostnossl"}
+    assert rules[-1] == ["hostnossl", "all", "all", "all", "reject"]
+    assert "ssl=on" in SERVICES["postgres"]["command"]
+    assert "hba_file=/opt/xype/pg_hba.conf" in SERVICES["postgres"]["command"]
+
+
+def test_edge_and_backend_serve_https_only() -> None:
+    nginx = (DEPLOY / "docker" / "edge" / "nginx.conf").read_text("utf-8")
+    assert re.findall(r"^\s*listen\s+(.+);", nginx, re.MULTILINE) == ["8443 ssl"]
+    assert "proxy_ssl_verify on;" in nginx
+    assert "http://" not in nginx
+    assert SERVICES["edge"]["ports"] == ["127.0.0.1:${BACKEND_PORT:-8000}:8443"]
+    dockerfile = (ROOT / "server" / "backend" / "Dockerfile").read_text("utf-8")
+    assert '"--ssl-certfile", "/certs/tls.crt"' in dockerfile
+    for name in ("backend", "edge"):
+        assert "https://127.0.0.1" in " ".join(SERVICES[name]["healthcheck"]["test"])
+
+
+def test_prometheus_scrapes_the_backend_over_verified_https() -> None:
+    config = yaml.safe_load((DEPLOY / "prometheus" / "prometheus.yml").read_text("utf-8"))
+    (job,) = [j for j in config["scrape_configs"] if j["job_name"] == "backend"]
+    assert job["scheme"] == "https"
+    assert job["tls_config"] == {"ca_file": "/etc/prometheus/ca.crt", "server_name": "backend"}

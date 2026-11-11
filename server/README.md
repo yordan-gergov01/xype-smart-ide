@@ -39,6 +39,13 @@ python -m pip install --require-hashes -r requirements/dev.txt
 python -m pip install -e . --no-deps
 ```
 
+Create the local dev CA once from the repository root for the compose stack (ADR-0036;
+Git ignores `deploy/certs/`; the integration tests issue their own throwaway CA):
+
+```bash
+python tools/server_tool.py python -m devtools.dev_ca
+```
+
 Install the Git hooks once from the repository root with `pre-commit install`. The mypy and
 import-linter hooks run from `server/.venv` through `tools/server_tool.py`, so the venv does
 not have to be active.
@@ -89,5 +96,6 @@ alembic revision --autogenerate -m "<short description>"
 ```
 
 `alembic` reads `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD` (the schema
-owner role). `pytest -m integration` then checks that the migrations build exactly the
+owner role), and `TLS_CA_FILE` (the dev CA's `ca.crt`): it connects over TLS
+only. `pytest -m integration` then checks that the migrations build exactly the
 models' schema. In compose, the `migrate` service applies them before the backend starts.

@@ -27,6 +27,12 @@ require() {
 for name in RABBITMQ_VHOST RABBITMQ_BACKEND_USER RABBITMQ_BACKEND_PASSWORD; do
     require "$name"
 done
+for file in tls.crt tls.key ca.crt; do
+    if [ ! -r "/certs/$file" ]; then
+        echo "error: /certs/$file is missing; create the dev CA (docs/runbooks/local-dev.md)" >&2
+        exit 1
+    fi
+done
 
 umask 077
 cat > /run/rabbitmq-definitions/definitions.json <<EOF

@@ -6,6 +6,8 @@
 # Images are pinned by tag and digest. Every service runs as a non-root user (except the
 # one-shot model download), with no capabilities, a read-only root filesystem, a memory
 # limit and a healthcheck (the OTel collector image has no shell, so it has none).
+# Every connection that carries payloads uses TLS with the local dev CA (ADR-0036):
+# create it once with `python tools/server_tool.py python -m devtools.dev_ca`.
 # tests/unit/deploy/test_compose.py checks these rules.
 name: xype
 
@@ -25,7 +27,25 @@ services:
     <<: *hardening
     image: pgvector/pgvector:0.8.7-pg16-trixie@sha256:9cf8b511f0e9a2c209b61430fc139f1ab9c75edbb31fb1751db6617b246a897a
     user: "999:999" # postgres; the named volume is seeded with its ownership
-    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=100"]
+    # Copies the TLS key into the tmpfs with the mode Postgres requires.
+    entrypoint: ["sh", "/opt/xype/entrypoint.sh"]
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=100
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/certs/tls.crt
+      - -c
+      - ssl_key_file=/var/run/postgresql/tls.key
+      - -c
+      - ssl_min_protocol_version=TLSv1.2
+      # TLS only over TCP; outside the data volume, so it applies to existing volumes.
+      - -c
+      - hba_file=/opt/xype/pg_hba.conf
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
       POSTGRES_USER: ${POSTGRES_SUPERUSER:?POSTGRES_SUPERUSER must be set}
@@ -37,6 +57,15 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres/entrypoint.sh:/opt/xype/entrypoint.sh:ro
+      - ./docker/postgres/pg_hba.conf:/opt/xype/pg_hba.conf:ro
+      # Fails at start when the dev CA was not created (docs/runbooks/local-dev.md).
+      - type: bind
+        source: ./certs/postgres
+        target: /certs
+        read_only: true
+        bind:
+          create_host_path: false
     tmpfs:
       - /var/run/postgresql:uid=999,gid=999
       - /tmp:uid=999,gid=999
@@ -67,12 +96,19 @@ services:
       REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     volumes:
       - ./docker/redis/entrypoint.sh:/opt/xype/entrypoint.sh:ro
+      # Fails at start when the dev CA was not created (docs/runbooks/local-dev.md).
+      - type: bind
+        source: ./certs/redis
+        target: /certs
+        read_only: true
+        bind:
+          create_host_path: false
     tmpfs:
       - /data:uid=999,gid=1000,mode=0700
     networks:
       - data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli --tls --cacert /certs/ca.crt -h 127.0.0.1 ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -95,6 +131,13 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./docker/rabbitmq/entrypoint.sh:/opt/xype/entrypoint.sh:ro
       - ./docker/rabbitmq/conf.d/20-xype.conf:/etc/rabbitmq/conf.d/20-xype.conf:ro
+      # Fails at start when the dev CA was not created (docs/runbooks/local-dev.md).
+      - type: bind
+        source: ./certs/rabbitmq
+        target: /certs
+        read_only: true
+        bind:
+          create_host_path: false
     tmpfs:
       - /run/rabbitmq-definitions:uid=100,gid=101,mode=0700
     networks:
@@ -124,6 +167,16 @@ services:
       DB_NAME: ${POSTGRES_DB:?POSTGRES_DB must be set}
       DB_USER: ${POSTGRES_OWNER_USER:?POSTGRES_OWNER_USER must be set}
       DB_PASSWORD: ${POSTGRES_OWNER_PASSWORD:?POSTGRES_OWNER_PASSWORD must be set}
+      TLS_CA_FILE: /certs/ca.crt
+    # The CA certificate only: the migration job serves nothing.
+    volumes:
+      # Fails at start when the dev CA was not created (docs/runbooks/local-dev.md).
+      - type: bind
+        source: ./certs/ca.crt
+        target: /certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - data
     depends_on:
@@ -157,6 +210,16 @@ services:
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:?RABBITMQ_VHOST must be set}
       RABBITMQ_USER: ${RABBITMQ_BACKEND_USER:?RABBITMQ_BACKEND_USER must be set}
       RABBITMQ_PASSWORD: ${RABBITMQ_BACKEND_PASSWORD:?RABBITMQ_BACKEND_PASSWORD must be set}
+      TLS_CA_FILE: /certs/ca.crt
+    # Serves TLS with this certificate (the image's command) and verifies the stores.
+    volumes:
+      # Fails at start when the dev CA was not created (docs/runbooks/local-dev.md).
+      - type: bind
+        source: ./certs/backend
+        target: /certs
+        read_only: true
+        bind:
+          create_host_path: false
     tmpfs:
       - /tmp:uid=10001,gid=10001,noexec,nosuid,nodev
     pids_limit: 128
@@ -177,7 +240,7 @@ services:
         condition: service_completed_successfully
     healthcheck:
       # The image has no curl: a failed request makes Python exit with 1.
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      test: ["CMD", "python", "-c", "import ssl, urllib.request; urllib.request.urlopen('https://127.0.0.1:8000/healthz', timeout=3, context=ssl.create_default_context(cafile='/certs/ca.crt'))"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -194,11 +257,19 @@ services:
     user: "101:101" # nginx
     volumes:
       - ./docker/edge/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Fails at start when the dev CA was not created (docs/runbooks/local-dev.md).
+      - type: bind
+        source: ./certs/edge
+        target: /certs
+        read_only: true
+        bind:
+          create_host_path: false
     tmpfs:
       - /tmp:uid=101,gid=101,noexec,nosuid,nodev
     pids_limit: 64
     ports:
-      - "127.0.0.1:${BACKEND_PORT:-8000}:8080"
+      # HTTPS only: https://localhost:<BACKEND_PORT>, trusted through deploy/certs/ca.crt.
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8443"
     networks:
       - edge
       - api
@@ -206,7 +277,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "--cacert", "/certs/ca.crt", "https://127.0.0.1:8443/healthz"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -299,6 +370,14 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
+      # The CA certificate only: it verifies the backend's /metrics over HTTPS.
+      # Fails at start when the dev CA was not created (docs/runbooks/local-dev.md).
+      - type: bind
+        source: ./certs/ca.crt
+        target: /etc/prometheus/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
     ports:
       - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     networks:

@@ -33,10 +33,13 @@ COPY alembic.ini ./
 USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+    CMD ["python", "-c", "import ssl, urllib.request; urllib.request.urlopen('https://127.0.0.1:8000/healthz', timeout=3, context=ssl.create_default_context(cafile='/certs/ca.crt'))"]
 # Uvicorn's access log is replaced by the backend's metadata-only access line. The
 # edge proxy sets no X-Forwarded-* headers; client addresses are not needed.
+# HTTPS only, with the certificate mounted at /certs (ADR-0036); without it the
+# server does not start.
 CMD ["uvicorn", "backend.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", \
+     "--ssl-certfile", "/certs/tls.crt", "--ssl-keyfile", "/certs/tls.key", \
      "--no-access-log", "--no-proxy-headers", "--timeout-graceful-shutdown", "10"]
 
 FROM deps AS test
@@ -47,6 +50,7 @@ COPY pyproject.toml alembic.ini ./
 COPY common_lib ./common_lib
 COPY backend ./backend
 COPY migrations ./migrations
+COPY devtools ./devtools
 COPY tests ./tests
 RUN chown app:app /app
 USER 10001:10001

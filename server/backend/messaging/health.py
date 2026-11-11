@@ -6,6 +6,7 @@ from aio_pika.exceptions import AMQPError
 
 from backend.core.settings import BackendSettings
 from common_lib.errors import DependencyUnavailableError
+from common_lib.tls import client_context
 
 
 class BrokerProbe:
@@ -24,6 +25,8 @@ class BrokerProbe:
                 virtualhost=self._settings.rabbitmq_vhost,
                 login=self._settings.rabbitmq_user,
                 password=self._settings.rabbitmq_password.get_secret_value(),
+                ssl=True,
+                ssl_context=client_context(self._settings.tls_ca_file),
                 timeout=self._settings.readiness_timeout_seconds,
             )
             await connection.close()

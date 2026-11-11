@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
 
 from backend.core.settings import BackendSettings
 from common_lib.models.connection import postgres_url
+from common_lib.tls import MINIMUM_TLS, client_context
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,7 @@ def _engine(settings: BackendSettings, host: str) -> AsyncEngine:
         pool_size=settings.db_pool_size,
         pool_pre_ping=True,
         connect_args={
+            "ssl": client_context(settings.tls_ca_file),
             "timeout": settings.db_connect_timeout_seconds,
             "command_timeout": settings.db_command_timeout_seconds,
         },
@@ -58,12 +60,17 @@ def create_database(settings: BackendSettings) -> Database:
 
 
 def create_redis_client(settings: BackendSettings) -> Redis:
-    """Redis client with this service's own ACL user and bounded timeouts."""
+    """Redis client with this service's own ACL user, TLS and bounded timeouts."""
     return Redis(
         host=settings.redis_host,
         port=settings.redis_port,
         username=settings.redis_user,
         password=settings.redis_password.get_secret_value(),
+        ssl=True,
+        ssl_ca_certs=str(settings.tls_ca_file),
+        ssl_cert_reqs="required",
+        ssl_check_hostname=True,
+        ssl_min_version=MINIMUM_TLS,
         socket_timeout=settings.redis_socket_timeout_seconds,
         socket_connect_timeout=settings.redis_socket_timeout_seconds,
     )
