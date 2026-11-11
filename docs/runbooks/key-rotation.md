@@ -1,6 +1,6 @@
 # Runbook: key rotation
 
-Decisions: ADR-0015 (KEK, session keys), ADR-0016 (repository keys), ADR-0014 (token signing keys and peppers). The KEK settings are wired into the backend and the indexer in Phase 2 slices 5 and 8; until then this runbook is the agreed procedure.
+Decisions: ADR-0015 (KEK, session keys), ADR-0016 (repository keys), ADR-0014 (token signing keys and peppers). The KEK settings are wired into the backend (Phase 2 slice 5b); the indexer gets them in slice 8.
 
 Never paste a key into a ticket, chat, commit or log. Keys go only into the environment file on the host (locally) or the secret store (hosted, plan §3a).
 
@@ -15,19 +15,19 @@ Never paste a key into a ticket, chat, commit or log. Keys go only into the envi
 
 ## Rotate the KEK
 
-1. Generate a new 32-byte key and a new id on a trusted machine:
+1. Generate a new KEK with a new id (`<id>:<base64url>`) on a trusted machine:
 
    ```bash
-   python -c "import secrets; print(secrets.token_hex(32))"
+   python tools/server_tool.py python -m backend.admin_cli new-key kek-2
    ```
 
-2. Move the current values to `KEK_PREVIOUS` / `KEK_PREVIOUS_ID`, and put the new ones in `KEK_CURRENT` / `KEK_CURRENT_ID`, for **both** `backend` and `indexer`.
+2. Move the current value to `KEK_PREVIOUS` and put the new one in `KEK_CURRENT`, for **both** `backend` and `indexer`.
 3. Restart `indexer` first, then `backend`. New keys are wrapped under the new KEK; both KEKs still unwrap (`KekRing`).
 4. Re-wrap what is stored under the previous KEK:
    - session keys need nothing: they expire within 24 hours;
    - repository keys: run the re-wrap command (added with `repository_keys` in slice 7).
    - never re-wrap a session key by writing it again: `put` refuses an existing id, because a re-written key would restart its nonce counters. Let it expire instead.
-5. After 24 hours, and after the re-wrap reports zero keys under the previous id, remove `KEK_PREVIOUS` / `KEK_PREVIOUS_ID` and restart both services.
+5. After 24 hours, and after the re-wrap reports zero keys under the previous id, empty `KEK_PREVIOUS` and restart both services.
 6. Destroy every copy of the old KEK.
 
 ## Suspected KEK exposure

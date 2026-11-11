@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from common_lib.auth import InvalidCredentialsError, InvalidTokenError, RateLimitedError
 from common_lib.errors import DependencyUnavailableError
+from common_lib.security import KeyExchangeError, KeyRevokedError
 
 NO_STORE = {"Cache-Control": "no-store"}
 
@@ -50,5 +51,8 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, _invalid_request)
     app.add_exception_handler(InvalidCredentialsError, _invalid_credentials)
     app.add_exception_handler(InvalidTokenError, _invalid_token)
+    # A revoked family or user: the token that asked is no longer good for new keys.
+    app.add_exception_handler(KeyRevokedError, _invalid_token)
+    app.add_exception_handler(KeyExchangeError, _invalid_request)
     app.add_exception_handler(RateLimitedError, _rate_limited)
     app.add_exception_handler(DependencyUnavailableError, _unavailable)

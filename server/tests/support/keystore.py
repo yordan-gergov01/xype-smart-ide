@@ -5,16 +5,18 @@ its own integration test.
 """
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from common_lib.clock import Clock
 from common_lib.errors import InvalidValueError
 from common_lib.secret_bytes import SecretBytes
 from common_lib.security import (
+    REVOCATION_MEMORY_SECONDS,
     Direction,
     DuplicateKeyError,
     KeyBoundElsewhereError,
     KeyNotFoundError,
+    KeyRevokedError,
     NonceError,
     SessionKeyRecord,
 )
@@ -34,14 +36,41 @@ class FakeKeyStore:
     def __init__(self, clock: Clock) -> None:
         self._clock = clock
         self._entries: dict[str, _Entry] = {}
+        # Tombstones: id -> (revoked at, remembered until).
+        self._revoked_users: dict[str, tuple[datetime, datetime]] = {}
+        self._revoked_families: dict[str, datetime] = {}
 
-    async def put(self, record: SessionKeyRecord, key: SecretBytes, *, ttl_seconds: int) -> None:
-        if ttl_seconds <= 0:
-            raise InvalidValueError("a session key needs a positive TTL")
+    async def put(
+        self,
+        record: SessionKeyRecord,
+        key: SecretBytes,
+        *,
+        ttl_seconds: int,
+        max_active: int,
+        credentials_issued_at: datetime,
+    ) -> None:
+        if ttl_seconds <= 0 or max_active <= 0:
+            raise InvalidValueError("a session key needs a positive TTL and cap")
+        now = self._clock.now()
+        family_until = self._revoked_families.get(record.family_id)
+        revoked_at, user_until = self._revoked_users.get(record.user_id, (now, now))
+        if (family_until is not None and family_until > now) or (
+            user_until > now and credentials_issued_at <= revoked_at
+        ):
+            raise KeyRevokedError("the user or token family was revoked")
         if self._live_or_none(record.key_id) is not None:
             raise DuplicateKeyError("a session key with this id already exists")
-        expires = (self._clock.now() + timedelta(seconds=ttl_seconds)).timestamp()
+        expires = (now + timedelta(seconds=ttl_seconds)).timestamp()
         self._entries[record.key_id] = _Entry(record, key.reveal(), expires)
+        others = sorted(
+            (e.record.created_at, e.record.key_id)
+            for e in self._entries.values()
+            if e.record.user_id == record.user_id
+            and e.record.key_id != record.key_id
+            and self._live_or_none(e.record.key_id) is not None
+        )
+        for _, key_id in others[: max(0, len(others) + 1 - max_active)]:
+            del self._entries[key_id]
 
     async def get(self, key_id: str) -> tuple[SessionKeyRecord, SecretBytes]:
         entry = self._live(key_id)
@@ -69,11 +98,21 @@ class FakeKeyStore:
         entry.sent += 1
         return entry.sent
 
-    async def revoke_user(self, user_id: str) -> None:
+    async def revoke_user(self, user_id: str, *, refuse_issued_until: datetime) -> None:
+        self._revoked_users[user_id] = (refuse_issued_until, self._remembered_until())
         self._entries = {k: e for k, e in self._entries.items() if e.record.user_id != user_id}
 
     async def revoke_family(self, family_id: str) -> None:
+        self._revoked_families[family_id] = self._remembered_until()
         self._entries = {k: e for k, e in self._entries.items() if e.record.family_id != family_id}
+
+    def holds(self, key_id: str) -> bytes | None:
+        """The stored key bytes (tests compare them with what the client unwrapped)."""
+        entry = self._live_or_none(key_id)
+        return None if entry is None else entry.key
+
+    def _remembered_until(self) -> datetime:
+        return self._clock.now() + timedelta(seconds=REVOCATION_MEMORY_SECONDS)
 
     def _live_or_none(self, key_id: str) -> _Entry | None:
         entry = self._entries.get(key_id)

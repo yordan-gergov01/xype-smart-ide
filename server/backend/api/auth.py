@@ -1,18 +1,20 @@
-"""`/api/v1/auth`: log in, refresh, and who am I (ADR-0014).
+"""`/api/v1/auth`: log in, refresh, who am I (ADR-0014) and session keys (ADR-0015).
 
 Bodies are validated here and never logged; secrets and tokens are `SecretStr`, so
 they cannot appear in a repr either.
 """
 
+import base64
+from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from backend.api.dependencies.auth import get_claims
-from backend.api.dependencies.services import get_auth_service
+from backend.api.dependencies.services import get_auth_service, get_session_key_service
 from backend.api.errors import NO_STORE
-from backend.services.auth import AuthService
+from backend.services.auth import AuthService, SessionKeyService
 from common_lib.auth import AccessClaims, Credential, Role, TokenPair
 from common_lib.secret_bytes import SecretBytes
 
@@ -20,6 +22,8 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 # The shape from backend.services.auth.peppers: anything else is refused before a lookup.
 CLIENT_ID = r"^xc_[0-9a-f]{16}$"
+# A raw 32-byte X25519 public key, standard base64 with padding.
+PUBLIC_KEY = r"^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$"
 
 
 class _Strict(BaseModel):
@@ -40,6 +44,19 @@ class TokenResponse(_Strict):
     refresh_token: str
     expires_in: int
     token_type: Literal["Bearer"] = "Bearer"  # noqa: S105 - the OAuth token type, not a value
+
+
+class SessionKeyRequest(_Strict):
+    client_public_key: str = Field(pattern=PUBLIC_KEY)
+
+
+class SessionKeyResponse(_Strict):
+    """Bytes as standard base64; `wrapped_key` is `nonce(12) ‖ ciphertext ‖ tag(16)`."""
+
+    key_id: str
+    server_public_key: str
+    wrapped_key: str
+    expires_at: datetime
 
 
 class MeResponse(_Strict):
@@ -88,4 +105,26 @@ async def me(claims: Annotated[AccessClaims, Depends(get_claims)]) -> MeResponse
     principal = claims.principal
     return MeResponse(
         user_id=str(principal.user_id), team_id=str(principal.team_id), role=principal.role
+    )
+
+
+def _b64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
+
+
+@router.post("/session-key", response_model=SessionKeyResponse)
+async def session_key(
+    body: SessionKeyRequest,
+    response: Response,
+    claims: Annotated[AccessClaims, Depends(get_claims)],
+    service: Annotated[SessionKeyService, Depends(get_session_key_service)],
+) -> SessionKeyResponse:
+    """A new session key for one stream, wrapped for this client's ephemeral key."""
+    minted = await service.mint(claims, base64.b64decode(body.client_public_key, validate=True))
+    response.headers.update(NO_STORE)
+    return SessionKeyResponse(
+        key_id=minted.key_id,
+        server_public_key=_b64(minted.server_public_key),
+        wrapped_key=_b64(minted.wrapped_key),
+        expires_at=minted.expires_at,
     )

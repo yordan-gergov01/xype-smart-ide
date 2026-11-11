@@ -1,8 +1,9 @@
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 
-from common_lib.domain import ChunkRef, ModelRef, RequestContext
+from common_lib.domain import ChunkRef, ModelRef, RequestContext, uuid7
 from common_lib.errors import XypeError
 
 HEX = "a" * 64
@@ -57,3 +58,14 @@ def test_values_are_immutable() -> None:
     ref = ModelRef("mock", "1")
     with pytest.raises(AttributeError):
         ref.model_id = "other"  # type: ignore[misc]
+
+
+def test_uuid7_carries_the_clock_and_sorts_by_time() -> None:
+    now = datetime(2026, 11, 11, 9, 0, tzinfo=UTC)
+    first, later = uuid7(now), uuid7(now + timedelta(milliseconds=1))
+    assert (first.version, first.variant) == (7, "specified in RFC 4122")
+    assert first.int >> 80 == int(now.timestamp() * 1000)
+    assert first < later
+    assert uuid7(now) != uuid7(now)
+    with pytest.raises(XypeError):
+        uuid7(datetime(1969, 12, 31, tzinfo=UTC))

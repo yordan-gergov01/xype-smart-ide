@@ -3,6 +3,7 @@ them connects until first used, so the API starts even while a store is down."""
 
 from dataclasses import dataclass
 
+from pydantic import SecretStr
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -60,12 +61,36 @@ def create_database(settings: BackendSettings) -> Database:
 
 
 def create_redis_client(settings: BackendSettings) -> Redis:
-    """Redis client with this service's own ACL user, TLS and bounded timeouts."""
-    return Redis(
+    """The cache Redis (rate limits, revocations)."""
+    return _redis(
+        settings,
         host=settings.redis_host,
         port=settings.redis_port,
-        username=settings.redis_user,
-        password=settings.redis_password.get_secret_value(),
+        user=settings.redis_user,
+        password=settings.redis_password,
+    )
+
+
+def create_keystore_client(settings: BackendSettings) -> Redis:
+    """The non-evicting key store for session keys (ADR-0015)."""
+    return _redis(
+        settings,
+        host=settings.keystore_host,
+        port=settings.keystore_port,
+        user=settings.keystore_user,
+        password=settings.keystore_password,
+    )
+
+
+def _redis(
+    settings: BackendSettings, *, host: str, port: int, user: str, password: SecretStr
+) -> Redis:
+    """A Redis client with this service's own ACL user, TLS and bounded timeouts."""
+    return Redis(
+        host=host,
+        port=port,
+        username=user,
+        password=password.get_secret_value(),
         ssl=True,
         ssl_ca_certs=str(settings.tls_ca_file),
         ssl_cert_reqs="required",

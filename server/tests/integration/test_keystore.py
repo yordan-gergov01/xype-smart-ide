@@ -1,50 +1,79 @@
-"""`RedisKeyStore` meets the `KeyStore` contract against a real Redis, stores only
-wrapped key material, and refuses tampered or swapped records (rule 07)."""
+"""`RedisKeyStore` meets the `KeyStore` contract against the `keystore` Redis as
+deploy/docker-compose.yml runs it (TLS, the backend's ACL user, no eviction), stores only
+wrapped key material, and refuses tampered or swapped records (rule 07, ADR-0015)."""
 
 import asyncio
 import base64
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from pathlib import Path
+from datetime import UTC, datetime
 
 import pytest
-import yaml
+from pydantic import SecretStr
 from redis.asyncio import Redis
+from redis.exceptions import NoPermissionError, ResponseError
+from support import containers
+from support.backend import make_settings
 from support.contracts import keystore as contract
-from testcontainers.community.redis import RedisContainer
 
+from backend.core.connections import create_keystore_client
+from backend.core.settings import BackendSettings
 from common_lib.keystore import RedisKeyStore
 from common_lib.secret_bytes import SecretBytes
-from common_lib.security import DecryptionError, Kek, KekRing, KeyStore
+from common_lib.security import (
+    REVOCATION_MEMORY_SECONDS,
+    DecryptionError,
+    Kek,
+    KekRing,
+    KeyStore,
+)
 
 pytestmark = pytest.mark.integration
 
-_COMPOSE = yaml.safe_load(
-    (Path(__file__).resolve().parents[3] / "deploy" / "docker-compose.yml").read_text("utf-8")
-)
-REDIS_IMAGE = _COMPOSE["services"]["redis"]["image"]
-TEST_PASSWORD = "test-only-not-a-secret"
+DEFAULT_PASSWORD = "test-only-default"
+BACKEND_PASSWORD = "test-only-not-a-secret"
 KEK = KekRing(Kek("kek-1", SecretBytes(bytes(range(32)))))
 
 
 @pytest.fixture(scope="module")
-def redis_url() -> Iterator[tuple[str, int]]:
-    with RedisContainer(REDIS_IMAGE, password=TEST_PASSWORD) as container:
-        yield container.get_container_host_ip(), int(container.get_exposed_port(6379))
+def keystore() -> Iterator[BackendSettings]:
+    """Settings that reach the key store as the backend's ACL user."""
+    env = {
+        "REDIS_PASSWORD": DEFAULT_PASSWORD,
+        "REDIS_BACKEND_USER": "backend",
+        "REDIS_BACKEND_PASSWORD": BACKEND_PASSWORD,
+    }
+    with containers.redis(env, service="keystore") as container:
+        yield make_settings(
+            keystore_host=container.get_container_host_ip(),
+            keystore_port=int(container.get_exposed_port(6379)),
+            keystore_user="backend",
+            keystore_password=BACKEND_PASSWORD,
+        )
 
 
 @pytest.fixture
-async def client(redis_url: tuple[str, int]) -> AsyncIterator[Redis]:
-    host, port = redis_url
-    redis = Redis(host=host, port=port, password=TEST_PASSWORD, socket_timeout=5)
+async def client(keystore: BackendSettings) -> AsyncIterator[Redis]:
+    """The operator's `default` user, to look at and tamper with what is stored."""
+    admin = keystore.model_copy(
+        update={"keystore_user": "default", "keystore_password": SecretStr(DEFAULT_PASSWORD)}
+    )
+    redis = create_keystore_client(admin)
     yield redis
     await redis.aclose()
 
 
 @pytest.fixture
-def store(client: Redis) -> KeyStore:
+async def backend(keystore: BackendSettings) -> AsyncIterator[Redis]:
+    redis = create_keystore_client(keystore)
+    yield redis
+    await redis.aclose()
+
+
+@pytest.fixture
+def store(backend: Redis) -> KeyStore:
     # Typed as the Protocol, so mypy checks the adapter against it.
-    adapter: KeyStore = RedisKeyStore(client, KEK)
+    adapter: KeyStore = RedisKeyStore(backend, KEK)
     return adapter
 
 
@@ -55,6 +84,10 @@ async def test_contract(store: KeyStore, check: Callable[[KeyStore], Awaitable[N
 
 async def test_expires(store: KeyStore) -> None:
     await contract.assert_expires(store, ttl=1, wait=lambda: asyncio.sleep(1.2))
+
+
+async def test_expired_keys_do_not_count(store: KeyStore) -> None:
+    await contract.assert_expired_keys_do_not_count(store, wait=lambda: asyncio.sleep(1.2))
 
 
 async def _record_json(client: Redis, key_id: str) -> dict[str, str]:
@@ -122,30 +155,76 @@ async def test_refuses_a_record_copied_into_another_slot(store: KeyStore, client
 
 
 async def test_revoke_deletes_bindings_and_counters(store: KeyStore, client: Redis) -> None:
-    rec = contract.record(user_id="u-revoke", family_id="f-revoke")
+    user, family = contract.unique("u-revoke"), contract.unique("f-revoke")
+    rec = contract.record(user_id=user, family_id=family)
     await contract.stored(store, rec)
     await store.bind_stream(rec.key_id, "session-a")
     await store.advance_nonce(rec.key_id, contract.C2S, 3)
     await store.next_counter(rec.key_id, contract.S2C)
-    await store.revoke_user("u-revoke")
+    await store.revoke_user(user, refuse_issued_until=datetime.now(UTC))
     left = [name async for name in client.scan_iter(f"xype:sk*{rec.key_id}*")]
     assert left == []
-    assert not await client.exists("xype:sku:u-revoke", "xype:skf:f-revoke")
+    assert not await client.exists(f"xype:sku:{user}", f"xype:skf:{family}")
+    assert 0 < await client.ttl(f"xype:skr:u:{user}") <= REVOCATION_MEMORY_SECONDS
 
 
 async def test_a_malformed_record_does_not_stop_revocation(store: KeyStore, client: Redis) -> None:
-    bad, good = contract.record(user_id="u-mixed"), contract.record(user_id="u-mixed")
+    user = contract.unique("u-mixed")
+    bad, good = contract.record(user_id=user), contract.record(user_id=user)
     await contract.stored(store, bad)
     await contract.stored(store, good)
     await client.set(f"xype:sk:{bad.key_id}", "not json")
-    await store.revoke_user("u-mixed")
+    await store.revoke_user(user, refuse_issued_until=datetime.now(UTC))
     assert not await client.exists(f"xype:sk:{bad.key_id}", f"xype:sk:{good.key_id}")
 
 
-async def test_unwraps_under_the_previous_kek(client: Redis) -> None:
-    old = RedisKeyStore(client, KEK)
+async def test_unwraps_under_the_previous_kek(backend: Redis) -> None:
+    old = RedisKeyStore(backend, KEK)
     rec = contract.record()
     value = await contract.stored(old, rec)
-    rotated = RedisKeyStore(client, KekRing(Kek("kek-2", SecretBytes(bytes(32))), KEK.current))
+    rotated = RedisKeyStore(backend, KekRing(Kek("kek-2", SecretBytes(bytes(32))), KEK.current))
     _, key = await rotated.get(rec.key_id)
     assert key.reveal() == value
+
+
+async def test_backend_acl_reaches_only_session_keys(backend: Redis) -> None:
+    for refused in (
+        backend.set("xype:rl:x", "1"),
+        backend.get("xype:auth:x"),
+        backend.publish("xype:auth:revoked", "x"),
+        backend.keys("*"),
+        backend.config_get("maxmemory"),
+        backend.eval("return 1", 0),
+    ):
+        with pytest.raises(NoPermissionError):
+            await refused
+
+
+async def test_the_key_store_never_evicts(client: Redis) -> None:
+    assert (await client.config_get("maxmemory-policy"))["maxmemory-policy"] == "noeviction"
+
+
+async def test_revokes_on_a_full_store(store: KeyStore, client: Redis) -> None:
+    """noeviction refuses writes when full; a revocation must still go through."""
+    user = contract.unique("u-full")
+    rec = contract.record(user_id=user)
+    await contract.stored(store, rec)
+    filler = "x" * 65536
+
+    async def fill() -> None:
+        for i in range(1000):
+            await client.set(f"xype:sk:filler:{i}", filler)
+
+    with pytest.raises(ResponseError, match="maxmemory"):
+        await fill()
+    try:
+        # Nothing to delete first: the script's only write is the tombstone.
+        family = contract.unique("f-full")
+        await store.revoke_family(family)
+        assert await client.exists(f"xype:skr:f:{family}")
+        await store.revoke_user(user, refuse_issued_until=datetime.now(UTC))
+        assert not await client.exists(f"xype:sk:{rec.key_id}")
+        assert await client.exists(f"xype:skr:u:{user}")
+    finally:
+        async for name in client.scan_iter("xype:sk:filler:*"):
+            await client.delete(name)

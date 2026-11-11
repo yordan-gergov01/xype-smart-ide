@@ -18,6 +18,7 @@ from common_lib.security import (
     direction_key,
     frame,
     hmac_id,
+    seal_session_key,
     server_exchange,
 )
 
@@ -82,3 +83,10 @@ def test_session_key_exchange() -> None:
         bytes.fromhex(case["wrap_nonce_hex"]), bytes.fromhex(case["wrapped_key_hex"]), aad
     )
     assert unwrapped.hex() == case["session_key_hex"]
+    sealed = seal_session_key(
+        result.wrapping_key,
+        case["key_id"],
+        SecretBytes(unwrapped),
+        nonce=bytes.fromhex(case["wrap_nonce_hex"]),
+    )
+    assert sealed.hex() == case["wrap_nonce_hex"] + case["wrapped_key_hex"]

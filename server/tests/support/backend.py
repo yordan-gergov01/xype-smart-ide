@@ -15,8 +15,10 @@ from backend.core.settings import BackendSettings
 from backend.main import create_app
 from backend.services.auth import AuthDependencies, ClientCredentialVerifier
 from backend.services.health import DependencyProbe
+from common_lib.clock import Clock, SystemClock
 from common_lib.errors import DependencyUnavailableError
 from support.auth import (
+    KEK,
     PEPPER,
     SIGNING_KEY,
     FakeRateLimiter,
@@ -24,6 +26,7 @@ from support.auth import (
     FakeRevocationPublisher,
     FakeUserStore,
 )
+from support.keystore import FakeKeyStore
 from support.tls import ca_file
 
 
@@ -61,6 +64,9 @@ def make_settings(**overrides: object) -> BackendSettings:
         "redis_host": "redis.invalid",
         "redis_user": "backend",
         "redis_password": "not-a-secret-redis",
+        "keystore_host": "keystore.invalid",
+        "keystore_user": "backend",
+        "keystore_password": "not-a-secret-keystore",
         "rabbitmq_host": "rabbitmq.invalid",
         "rabbitmq_vhost": "xype",
         "rabbitmq_user": "backend",
@@ -70,6 +76,7 @@ def make_settings(**overrides: object) -> BackendSettings:
         "tls_ca_file": ca_file(),
         "auth_signing_key_current": SIGNING_KEY,
         "auth_pepper_current": PEPPER,
+        "kek_current": KEK,
     }
     values.update(overrides)
     return BackendSettings.model_validate(values)
@@ -83,10 +90,13 @@ class FakeAuth:
     users: FakeUserStore = field(default_factory=FakeUserStore)
     limiter: FakeRateLimiter = field(default_factory=FakeRateLimiter)
     revocations: FakeRevocationPublisher = field(default_factory=FakeRevocationPublisher)
+    clock: Clock = field(default_factory=SystemClock)
     tokens: FakeRefreshTokenStore = field(init=False)
+    keys: FakeKeyStore = field(init=False)
 
     def __post_init__(self) -> None:
         self.tokens = FakeRefreshTokenStore(self.users)
+        self.keys = FakeKeyStore(self.clock)
 
     @property
     def deps(self) -> AuthDependencies:
@@ -96,6 +106,7 @@ class FakeAuth:
             tokens=self.tokens,
             limiter=self.limiter,
             revocations=self.revocations,
+            keys=self.keys,
         )
 
 

@@ -67,6 +67,10 @@ _Avoid_: master key
 
 **Key store**: the non-evicting Redis instance that holds wrapped session keys and nonce counters (ADR-0015).
 
+**Revocation tombstone**: a short-lived key-store entry, written when a user or token family is revoked, that refuses new session keys while the revoked access tokens still verify (ADR-0015).
+
+**Session-key cap**: the most session keys a user holds at once (8); minting one more deletes the oldest (ADR-0015).
+
 ## AI features
 
 **Completion**: an inline code suggestion at the cursor, including fill-in-the-middle; the synchronous path.

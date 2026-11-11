@@ -1,6 +1,10 @@
 from support.backend import make_settings
 
-from backend.core.connections import create_database, create_redis_client
+from backend.core.connections import (
+    create_database,
+    create_keystore_client,
+    create_redis_client,
+)
 from backend.main import _default_probes
 
 
@@ -27,6 +31,15 @@ def test_readiness_also_probes_a_separate_replica() -> None:
             make_settings(db_read_host="replica.invalid"),
             create_database(make_settings(db_read_host="replica.invalid")),
             create_redis_client(make_settings()),
+            create_keystore_client(make_settings()),
         )
     ]
-    assert harness_names == ["database", "database_read", "redis", "broker"]
+    assert harness_names == ["database", "database_read", "redis", "keystore", "broker"]
+
+
+def test_the_key_store_has_its_own_connection() -> None:
+    client = create_keystore_client(make_settings())
+    kwargs = client.connection_pool.connection_kwargs
+    assert (kwargs["host"], kwargs["username"]) == ("keystore.invalid", "backend")
+    assert kwargs["password"] == "not-a-secret-keystore"
+    assert kwargs["ssl_cert_reqs"] == "required"

@@ -1,7 +1,9 @@
 """Domain value types shared by every service (see docs/interfaces.md)."""
 
+import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -58,3 +60,14 @@ class ModelRef:
     def __post_init__(self) -> None:
         if not self.model_id or not self.model_version:
             raise InvalidValueError("model_id and model_version must not be empty")
+
+
+def uuid7(now: datetime) -> UUID:
+    """A UUIDv7 (RFC 9562): 48-bit Unix milliseconds from the injected clock, then 74
+    random bits, so ids sort by creation time. Python 3.12 has no `uuid.uuid7`."""
+    millis = int(now.timestamp() * 1000)
+    if not 0 <= millis < 1 << 48:
+        raise InvalidValueError("the time is outside the UUIDv7 range")
+    rand = int.from_bytes(os.urandom(10))
+    rand_a, rand_b = (rand >> 62) & 0xFFF, rand & ((1 << 62) - 1)
+    return UUID(int=(millis << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b)

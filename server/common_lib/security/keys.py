@@ -152,6 +152,20 @@ def server_exchange(
         shared.wipe()
 
 
+def seal_session_key(
+    wrapping_key: SecretBytes, key_id: str, session_key: SecretBytes, *, nonce: bytes | None = None
+) -> bytes:
+    """`nonce ‖ AES-256-GCM(wrapping_key, session_key, aad = "session" ‖ key_id)`, the
+    `wrapped_key` the client unwraps (ADR-0015). `nonce` is for test vectors only."""
+    nonce = nonce or os.urandom(_WRAP_NONCE_BYTES)
+    if len(nonce) != _WRAP_NONCE_BYTES:
+        raise InvalidValueError("a wrap nonce has 12 bytes")
+    sealed = AESGCM(wrapping_key.reveal()).encrypt(
+        nonce, session_key.reveal(), frame("session", key_id)
+    )
+    return nonce + sealed
+
+
 def new_key() -> SecretBytes:
     """A fresh random 256-bit key."""
     return SecretBytes(os.urandom(KEY_BYTES))

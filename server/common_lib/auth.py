@@ -63,11 +63,13 @@ class Credential:
 
 @dataclass(frozen=True, slots=True)
 class AccessClaims:
-    """A verified access token: the principal, its token family and when it expires."""
+    """A verified access token: the principal, its token family, when it was issued
+    (whole seconds, as in the token) and when it expires."""
 
     principal: Principal
     family_id: uuid.UUID
     expires_at: datetime
+    issued_at: datetime
 
 
 @dataclass(frozen=True, slots=True)

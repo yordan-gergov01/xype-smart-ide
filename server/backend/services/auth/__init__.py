@@ -11,6 +11,11 @@ from backend.services.auth.ports import (
     UserStore,
 )
 from backend.services.auth.service import AuthDependencies, AuthPolicy, AuthService
+from backend.services.auth.session_keys import (
+    MintedSessionKey,
+    SessionKeyPolicy,
+    SessionKeyService,
+)
 from backend.services.auth.verifier import ClientCredentialVerifier
 from common_lib.auth import (
     ROLES,
@@ -51,6 +56,7 @@ __all__ = [
     "CredentialVerifier",
     "InvalidCredentialsError",
     "InvalidTokenError",
+    "MintedSessionKey",
     "NewClient",
     "NewRefreshToken",
     "NotFound",
@@ -67,6 +73,8 @@ __all__ = [
     "Role",
     "Rotated",
     "Rotation",
+    "SessionKeyPolicy",
+    "SessionKeyService",
     "SigningKey",
     "StoredCredentials",
     "TokenPair",

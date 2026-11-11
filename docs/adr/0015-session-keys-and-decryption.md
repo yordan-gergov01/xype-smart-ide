@@ -114,6 +114,26 @@ A chunk that fails the server scrub re-check is not embedded. It is reported bac
 - After indexing, a privacy test scans RabbitMQ messages, Redis values and logs (slice 8): no plaintext and no unwrapped key.
 - ADR-0034's compose test asserts that only `backend` and `indexer` receive the KEK and join `keys`, that the indexer does not join `data`, and that `keystore` uses `noeviction`. A test checks the indexer's ACL.
 
+### Implementation notes (slice 5b)
+
+- **Request and response.** `POST /api/v1/auth/session-key` takes `{client_public_key}`, the raw 32-byte X25519 key in standard base64 with padding. It returns `{key_id, server_public_key, wrapped_key, expires_at}`. `wrapped_key` is base64 of `nonce(12) ‖ ciphertext ‖ tag(16)` (`seal_session_key`, checked against the shared vectors). The repository keys (ADR-0016) join the response in slice 7, with `repository_ids` in the request.
+- **Ids.** `key_id` is a UUIDv7 from the injected clock (`common_lib.domain.uuid7`; Python 3.12 has no `uuid.uuid7`).
+- **Expiry.** `expires_at` is `created_at + 12 h` (`SESSION_KEY_MAX_AGE_SECONDS`), the last moment a stream accepts the key. The store keeps it for 24 h only so the indexer can finish queued jobs. `check_key_age` is the age check; the gateway calls it on `Hello` and on each payload from slice 6. It is not in `KeyStore.get`, because the indexer reads keys past 12 h.
+- **Cap.** `put` takes `max_active` (`SESSION_KEYS_MAX_ACTIVE`, default 8). The user and family indexes are sorted sets scored by `created_at` in milliseconds. In the same script, ids of expired keys leave the user's index, and the oldest other keys over the cap are deleted with their binding, counters and index entries. The new key is never the one evicted, even if another replica's clock is behind.
+- **Revocation tombstones.** After a revocation, the revoked token family's access tokens still verify for up to 15 minutes (ADR-0014). Without more, one could mint a new key into the revoked family. So `revoke_family` and `revoke_user` write a tombstone (`xype:skr:f:<id>`, `xype:skr:u:<id>`) for `REVOCATION_MEMORY_SECONDS` (17 min: the longest access token, twice the skew and a minute of headroom) in the same script that deletes the keys.
+  - `put` refuses (`KeyRevokedError`, answered as 401 `invalid_token`) for a revoked family.
+  - It also refuses for a revoked user, when the caller's access token was issued (`iat`) at or before the revocation. A login after a secret rotation mints again.
+  - The user tombstone holds the revocation time plus the 30 s clock skew of ADR-0014, taken after the refresh tokens were revoked. That covers a login or refresh in flight, which signs its token after the revocation, and a gateway clock ahead of the admin's. A genuine new login in those 30 s gets 401 on `/session-key` and retries.
+  - The revoke script deletes before it writes and may run on a full store (`allow-oom`), so a revocation never fails for lack of memory.
+- **Order on revocation.** Refresh tokens (Postgres), then session keys, then the revocation message to the replicas. Each step is idempotent: when one fails with 503, running the admin command again completes the rest. On refresh-token reuse the message is published even when the key store is down; the next presentation of a revoked token deletes the keys.
+- **Rate limit.** 10 mints per minute and user (`SESSION_KEYS_PER_MINUTE`), on top of the 200 requests per minute every authenticated route counts.
+- **Deploy.**
+  - `keystore` runs the `redis` image with the same entrypoint in `REDIS_MODE=keystore`: TLS only, its own leaf certificate, `noeviction`, 16 MB of data in a 40 MiB container, no persistence.
+  - The `keys` network is internal and only `backend` joins it until the indexer does (slice 8).
+  - The backend's ACL user is limited to `~xype:sk*`, with no channels and, of scripting, only `EVALSHA` and `SCRIPT LOAD`.
+  - When the store is full, a write fails and the request answers 503. Keys are never evicted.
+  - To fit the 4 GB budget, the cache's limit went from 128 to 96 MiB. It measured 9 MiB, with 64 MB of data allowed.
+
 ## Pros and cons of the options
 
 ### 2. The gateway decrypts in-process

@@ -89,6 +89,7 @@ services:
     # password is never on a command line.
     entrypoint: ["sh", "/opt/xype/entrypoint.sh"]
     environment:
+      REDIS_MODE: cache
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
       REDIS_BACKEND_USER: ${REDIS_BACKEND_USER:?REDIS_BACKEND_USER must be set}
       REDIS_BACKEND_PASSWORD: ${REDIS_BACKEND_PASSWORD:?REDIS_BACKEND_PASSWORD must be set}
@@ -112,7 +113,39 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    mem_limit: 128m
+    mem_limit: 96m
+
+  # Session keys wrapped under the KEK (ADR-0015): a separate, non-evicting Redis on its
+  # own network, so the keys never share a store or a network with the ciphertext.
+  keystore:
+    <<: *hardening
+    image: redis:8.8.4-alpine@sha256:c027ae0f677dcf73d74038256f5b88c9ba7b11ccbfae97e96a9f091208d36125
+    user: "999:1000" # redis
+    entrypoint: ["sh", "/opt/xype/entrypoint.sh"]
+    environment:
+      REDIS_MODE: keystore
+      REDIS_PASSWORD: ${KEYSTORE_PASSWORD:?KEYSTORE_PASSWORD must be set}
+      REDIS_BACKEND_USER: ${KEYSTORE_BACKEND_USER:?KEYSTORE_BACKEND_USER must be set}
+      REDIS_BACKEND_PASSWORD: ${KEYSTORE_BACKEND_PASSWORD:?KEYSTORE_BACKEND_PASSWORD must be set}
+      REDISCLI_AUTH: ${KEYSTORE_PASSWORD:?KEYSTORE_PASSWORD must be set}
+    volumes:
+      - ./docker/redis/entrypoint.sh:/opt/xype/entrypoint.sh:ro
+      - type: bind
+        source: ./certs/keystore
+        target: /certs
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /data:uid=999,gid=1000,mode=0700
+    networks:
+      - keys
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --tls --cacert /certs/ca.crt -h 127.0.0.1 ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 40m
 
   rabbitmq:
     <<: *hardening
@@ -206,6 +239,9 @@ services:
       REDIS_HOST: redis
       REDIS_USER: ${REDIS_BACKEND_USER:?REDIS_BACKEND_USER must be set}
       REDIS_PASSWORD: ${REDIS_BACKEND_PASSWORD:?REDIS_BACKEND_PASSWORD must be set}
+      KEYSTORE_HOST: keystore
+      KEYSTORE_USER: ${KEYSTORE_BACKEND_USER:?KEYSTORE_BACKEND_USER must be set}
+      KEYSTORE_PASSWORD: ${KEYSTORE_BACKEND_PASSWORD:?KEYSTORE_BACKEND_PASSWORD must be set}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:?RABBITMQ_VHOST must be set}
       RABBITMQ_USER: ${RABBITMQ_BACKEND_USER:?RABBITMQ_BACKEND_USER must be set}
@@ -217,6 +253,9 @@ services:
       AUTH_PEPPER_CURRENT: ${AUTH_PEPPER_CURRENT:?generate AUTH_PEPPER_CURRENT, see docs/runbooks/local-dev.md}
       AUTH_PEPPER_PREVIOUS: ${AUTH_PEPPER_PREVIOUS:-}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-200}
+      # Wraps session keys in the key store (ADR-0015); generated like the auth keys.
+      KEK_CURRENT: ${KEK_CURRENT:?generate KEK_CURRENT, see docs/runbooks/local-dev.md}
+      KEK_PREVIOUS: ${KEK_PREVIOUS:-}
     # Serves TLS with this certificate (the image's command) and verifies the stores.
     volumes:
       # Fails at start when the dev CA was not created (docs/runbooks/local-dev.md).
@@ -233,12 +272,15 @@ services:
     networks:
       - api
       - data
+      - keys
       - messaging
       - telemetry
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      keystore:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -437,6 +479,9 @@ services:
 networks:
   # Internal networks have no route to the internet or the host.
   data:
+    internal: true
+  # The key store and its clients only: the backend now, the indexer in slice 8.
+  keys:
     internal: true
   messaging:
     internal: true

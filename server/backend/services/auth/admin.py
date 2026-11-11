@@ -2,13 +2,16 @@
 dashboard (Phase 7) later, both through this service."""
 
 import uuid
+from datetime import timedelta
 
 import structlog
 
+from backend.services.auth.access_tokens import CLOCK_SKEW_SECONDS
 from backend.services.auth.peppers import PepperRing, new_client_id, new_client_secret
 from backend.services.auth.ports import RefreshTokenStore, RevocationPublisher, UserStore
 from common_lib.auth import AuthError, NewClient, Revocation, Role
 from common_lib.clock import Clock
+from common_lib.security import KeyStore
 
 logger = structlog.get_logger(__name__)
 
@@ -23,6 +26,7 @@ class ClientAdmin:
         users: UserStore,
         tokens: RefreshTokenStore,
         revocations: RevocationPublisher,
+        keys: KeyStore,
         *,
         peppers: PepperRing,
         clock: Clock,
@@ -30,6 +34,7 @@ class ClientAdmin:
         self._users = users
         self._tokens = tokens
         self._revocations = revocations
+        self._keys = keys
         self._peppers = peppers
         self._clock = clock
 
@@ -80,5 +85,14 @@ class ClientAdmin:
         return NewClient(user_id, client_id, secret)
 
     async def _revoke(self, user_id: uuid.UUID) -> None:
+        """Refresh tokens, then session keys, then the replicas. Each step is idempotent:
+        if one fails (503), running the command again completes the rest.
+
+        The key store refuses keys for access tokens issued up to the clock skew after
+        the refresh tokens were revoked: a login or refresh in flight signs its token
+        after that, and the gateway's clock may run ahead of this one. A new login in
+        those 30 s gets 401 on `/session-key` and retries."""
         await self._tokens.revoke_user(user_id, now=self._clock.now())
+        refuse_until = self._clock.now() + timedelta(seconds=CLOCK_SKEW_SECONDS)
+        await self._keys.revoke_user(str(user_id), refuse_issued_until=refuse_until)
         await self._revocations.publish(Revocation("user", user_id))
