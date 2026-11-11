@@ -68,6 +68,10 @@ Chosen option: **1**.
   session keys live in the separate `keystore` Redis (`noeviction`, network `keys`,
   ADR-0015).
 - Backend and edge proxy: `pids_limit`, and `/tmp` tmpfs with `noexec,nosuid,nodev`.
+- TLS (ADR-0036): the edge proxy publishes HTTPS only (container port 8443) and
+  verifies the backend's certificate; the backend, Postgres, Redis and RabbitMQ have no
+  plaintext listener. Each service mounts only its own certificate directory from
+  `deploy/certs/` read-only; the CA key is never mounted.
 - Grafana: telemetry, update checks, sign-up, anonymous access, external snapshots,
   Gravatar and the plugin admin are off.
 - RabbitMQ: vhost `xype` with quorum queues by default (ADR-0004), no guest user;

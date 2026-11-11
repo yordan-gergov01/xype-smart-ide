@@ -7,6 +7,8 @@
 !common_lib/
 !requirements/
 !tests/
+# The dev CA generator, for the test stage only (the runtime stage never copies it).
+!devtools/
 !pyproject.toml
 
 # Never copy secrets that may sit inside the included folders.

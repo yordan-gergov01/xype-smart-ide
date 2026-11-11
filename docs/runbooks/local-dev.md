@@ -29,6 +29,15 @@ OpenTelemetry collector in the `observability` profile. Design: ADR-0034, ADR-00
 cp deploy/env/.env.example deploy/env/.env
 ```
 
+Create the dev CA and the services' certificates (ADR-0036). It writes into
+`deploy/certs/`, which Git ignores:
+
+```bash
+python tools/server_tool.py python -m devtools.dev_ca
+```
+
+Every payload hop is TLS only, and the stack does not start without these files.
+
 Change every `dev-only-change-me-*` value before any shared use, then:
 
 ```bash
@@ -57,7 +66,7 @@ changes).
 
 | URL | What |
 |---|---|
-| `http://127.0.0.1:8000/healthz` | Backend liveness (through the edge proxy; port `BACKEND_PORT`) |
+| `https://localhost:8000/healthz` | Backend liveness (through the edge proxy, HTTPS only; port `BACKEND_PORT`) |
 | `http://127.0.0.1:3001` | Grafana (observability profile; `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`) |
 | `http://127.0.0.1:9090` | Prometheus (observability profile); scrapes the backend's `/metrics` |
 
@@ -65,7 +74,7 @@ The edge proxy serves only `/healthz` and `/api/v1/`. Readiness (200, or 503 nam
 unavailable dependency) and metrics stay inside the stack:
 
 ```bash
-docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:8000/readyz').read().decode())"
+docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -c "import ssl, urllib.request as u; print(u.urlopen('https://127.0.0.1:8000/readyz', context=ssl.create_default_context(cafile='/certs/ca.crt')).read().decode())"
 ```
 
  To export traces, set
@@ -78,8 +87,27 @@ RabbitMQ, Ollama and the backend publish no ports. Reach them with
 `docker compose ... exec`, for example:
 
 ```bash
-docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec postgres sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
+
+## TLS and the dev CA
+
+`devtools.dev_ca` creates one CA (`deploy/certs/ca.crt`, key `ca.key`) and one
+certificate per TLS server: `edge`, `backend`, `postgres`, `redis`, `rabbitmq`. Each
+service mounts only its own directory at `/certs`, and the CA key is never mounted. The
+CA's name constraints let it issue only for these names, `localhost` and `127.0.0.0/8`.
+On Windows, file modes do not protect the keys: keep the checkout under your user profile,
+or restrict the folder with `icacls deploy\certs /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F"`.
+
+| What | How |
+|---|---|
+| Call the API from the host | `curl --cacert deploy/certs/ca.crt https://localhost:8000/healthz`. On Windows also pass `--ssl-no-revoke`, because the dev CA has no revocation list. |
+| Let the IDE trust the CA (slice 11) | Point the extension at `deploy/certs/ca.crt`. Do not import it into the OS store; the client trusts it for XYPE connections only. |
+| Renew certificates | Leaves are valid for 90 days. Re-run the generator: it renews leaves with fewer than 30 days left and keeps current ones. Then restart the stack (`docker compose ... up -d --force-recreate`). |
+| Replace the CA | Run with `--rotate-ca`, for example after a leaked key or 2 years on. It issues every leaf again; restart the stack and re-trust `ca.crt` wherever you added it. |
+
+A plaintext client is refused by every store: Postgres rejects non-TLS connections in
+`pg_hba.conf`, and Redis and RabbitMQ have no plaintext listener.
 
 ## Stop and reset
 
@@ -130,6 +158,15 @@ Ollama reports 1.2 GB per loaded model including the KV cache it reserves; a lar
 cold run; Phase 3 measures completion latency properly.
 
 ## Troubleshooting
+
+- A service exits with `/certs/tls.crt is missing`, or nginx or uvicorn cannot load a
+  certificate: the dev CA was not created. Run the generator, then `docker compose ...
+  up -d`. On Docker Desktop, compose creates an empty directory for a missing bind
+  source: `deploy/certs/<service>/`, and even `deploy/certs/ca.crt`. The generator fills
+  the service directories and replaces an empty `ca.crt` directory with the file.
+- `certificate verify failed` or `SEC_E_UNTRUSTED_ROOT` from a host client: pass
+  `deploy/certs/ca.crt` as the CA. After `--rotate-ca`, restart every service so none
+  still serves a certificate from the old CA.
 
 - `ollama-pull` exited non-zero: the model download failed (network) or a model name
   contains `cloud` (refused). Re-run `docker compose ... up -d`; finished layers are kept.

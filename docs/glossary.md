@@ -121,3 +121,6 @@ _Avoid_: package (means a Python distribution here)
 **SecretBytes**: a buffer of plaintext code that never prints its content and is wiped right after use.
 
 **Edge proxy**: the only container with a published API port; it forwards to the backend, which has no route outside the stack.
+
+**Dev CA**: the local certificate authority in `deploy/certs/` (never committed) that issues one server certificate per TLS service of the stack; name constraints limit it to the stack's names (ADR-0036).
+_Avoid_: self-signed certificate (each leaf is signed by the CA)

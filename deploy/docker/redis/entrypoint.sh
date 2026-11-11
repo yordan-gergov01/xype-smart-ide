@@ -34,8 +34,24 @@ case "$REDIS_BACKEND_USER" in
         ;;
 esac
 
+for file in tls.crt tls.key ca.crt; do
+    if [ ! -r "/certs/$file" ]; then
+        echo "error: /certs/$file is missing; create the dev CA (docs/runbooks/local-dev.md)" >&2
+        exit 1
+    fi
+done
+
+# TLS only (ADR-0036): no plaintext port. Clients authenticate with ACL passwords, not
+# certificates.
 umask 077
 cat > /data/redis.conf <<EOF
+port 0
+tls-port 6379
+tls-cert-file /certs/tls.crt
+tls-key-file /certs/tls.key
+tls-ca-cert-file /certs/ca.crt
+tls-auth-clients no
+tls-protocols "TLSv1.2 TLSv1.3"
 requirepass $REDIS_PASSWORD
 user $REDIS_BACKEND_USER on >$REDIS_BACKEND_PASSWORD resetchannels ~xype:* +@read +@write +@fast +@connection -@dangerous -@admin -@scripting
 save ""

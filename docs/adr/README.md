@@ -28,6 +28,7 @@ Written in Phase 1:
 | [0013](0013-grpc-session-stream.md) | Single bidirectional gRPC `Session` stream with oneof envelopes | Proposed | §3.3, §3.5 |
 | [0034](0034-local-stack-compose.md) | Local stack: compose networks, least privilege and memory limits | Proposed | §1, §2, §8 |
 | [0035](0035-schema-migrations.md) | Schema migrations: Alembic from the models, owner and runtime roles, a migrate job | Proposed | §1, §3.6, §3.8 |
+| [0036](0036-tls-local-dev-ca.md) | TLS in transit with a name-constrained local dev CA; TLS-only listeners on every payload hop | Proposed | §3.7 |
 
 Written in Phase 2:
 

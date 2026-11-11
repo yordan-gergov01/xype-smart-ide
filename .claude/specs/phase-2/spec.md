@@ -47,6 +47,8 @@ Every slice that adds a message naming a repository adds a cross-team negative t
 
 Carried forward from slice 3 (review):
 - Slice 5: enforce the 12-hour maximum session-key age from `created_at`; record a received nonce counter only after `CryptoBox.open` succeeded.
+- Slice 6: the gRPC server serves TLS with the backend's certificate and the edge proxy forwards with `grpc_pass grpcs://` and `grpc_ssl_verify on` (ADR-0036).
+- Slice 8: the `keystore` Redis gets its own leaf (`SERVICES` in `server/devtools/dev_ca.py`), TLS-only like `redis`, and the key-store client uses `common_lib.tls`.
 - Slice 8: the indexer image includes `packages/scrub-rules/rules.json`; the re-check refuses chunks over 64 KiB and runs in `asyncio.to_thread`; the keystore ACLs allow `EVALSHA`/`SCRIPT LOAD` for the backend user; `cryptography` goes into the indexer's requirements.
 
 ## Privacy rules for every slice
