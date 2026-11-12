@@ -118,13 +118,18 @@ class SessionGate:
         return OpenSession(session_id, claims, record, repositories)
 
     async def message(self, session: OpenSession, repository_ids: Iterable[str] = ()) -> None:
-        """Every later message: the rate limit, the key's age, and that the repositories the
-        transport extracted from it were authorized at Hello. Each slice that handles a
-        message kind extracts every repository id it carries, nested `ChunkRef`s included."""
+        """Every later message: the rate limit, the key's age and existence, and that the
+        repositories the transport extracted from it were authorized at Hello. Each slice
+        that handles a message kind extracts every repository id it carries, nested
+        `ChunkRef`s included."""
         await self._auth.count(session.claims)
         try:
             check_key_age(session.key, self._clock.now())
-        except KeyNotFoundError:
+            # The key still exists and is still this stream's: a revocation deletes keys
+            # before it publishes, so this closes a revoked stream even when the message
+            # never arrives (pub/sub is at most once).
+            await self._keys.bind_stream(session.key.key_id, session.session_id)
+        except (KeyNotFoundError, KeyBoundElsewhereError):
             raise RefusedError(KEY_UNUSABLE) from None
         if not _parse_ids(repository_ids) <= session.repository_ids:
             raise RefusedError(NO_ACCESS)

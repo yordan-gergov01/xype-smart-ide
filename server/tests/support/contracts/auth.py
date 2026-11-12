@@ -1,13 +1,20 @@
 """Contracts of the auth stores: the fakes (unit) and the Postgres and Redis adapters
 (integration) all run them."""
 
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from backend.services.auth import RateLimiter, RefreshTokenStore, RevocationPublisher, UserStore
+from backend.services.auth import (
+    RateLimiter,
+    RefreshTokenStore,
+    RevocationPublisher,
+    RevocationSubscriber,
+    UserStore,
+)
 from common_lib.auth import (
     ConflictError,
     NewRefreshToken,
@@ -248,14 +255,33 @@ LIMITER: tuple[Callable[[RateLimiter], Awaitable[None]], ...] = (
 )
 
 
-# --- RevocationPublisher ----------------------------------------------------------
-
-# What a subscriber received so far, as `Revocation` values, in order.
-type Observed = Callable[[], Awaitable[list[Revocation]]]
+# --- RevocationPublisher / RevocationSubscriber -------------------------------------
 
 
-async def assert_publishes_revocations(publisher: RevocationPublisher, observed: Observed) -> None:
+async def assert_hears_revocations(
+    publisher: RevocationPublisher,
+    subscriber: RevocationSubscriber,
+    *,
+    settle: Callable[[], Awaitable[None]],
+) -> None:
+    """What one replica publishes, the subscriber hears, in order. `settle` waits until
+    the subscription is in place (pub/sub drops what is sent before)."""
     sent = [Revocation("user", uuid.uuid4()), Revocation("family", uuid.uuid4())]
-    for revocation in sent:
-        await publisher.publish(revocation)
-    assert await observed() == sent
+    received: list[Revocation] = []
+
+    async def consume() -> None:
+        async for revocation in subscriber.revocations():
+            received.append(revocation)
+            if len(received) == len(sent):
+                return
+
+    task = asyncio.create_task(consume())
+    try:
+        await settle()
+        for revocation in sent:
+            await publisher.publish(revocation)
+        await asyncio.wait_for(task, timeout=5)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert received == sent

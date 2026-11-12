@@ -44,6 +44,10 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Hello**: the first message on a session stream; it names the session key and the repositories the window works on.
 
+**Stream registry**: a backend process's open session streams by user and token family, so a revocation or a shutdown reaches them at once (ADR-0013).
+
+**Drain**: on shutdown, telling every open stream to reconnect (`CODE_UNAVAILABLE`) before the server stops.
+
 **Session key**: the AES-256 key, issued per session and user, that encrypts code between the client and the server (ADR-0015).
 
 **Repository key**: the per-repository HMAC key behind every obfuscated id of that repository (ADR-0016).

@@ -6,7 +6,12 @@ from prometheus_client import CollectorRegistry
 from backend.core.settings import BackendSettings
 from backend.grpc import SessionStream, StreamMetrics
 from backend.services.auth import AuthDependencies, AuthService
-from backend.services.session import RepositoryAccess, SessionGate, StreamPolicy
+from backend.services.session import (
+    RepositoryAccess,
+    SessionGate,
+    StreamPolicy,
+    StreamRegistry,
+)
 from common_lib.clock import Clock
 
 
@@ -33,9 +38,10 @@ def session_gate(
 
 def session_stream(
     gate: SessionGate,
+    streams: StreamRegistry,
     *,
     clock: Clock,
-    registry: CollectorRegistry,
+    metrics: CollectorRegistry,
     tracer: Tracer,
 ) -> SessionStream:
-    return SessionStream(gate, clock=clock, metrics=StreamMetrics(registry), tracer=tracer)
+    return SessionStream(gate, streams, clock=clock, metrics=StreamMetrics(metrics), tracer=tracer)

@@ -34,6 +34,8 @@ from backend.services.session import (
     OpenSession,
     RefusedError,
     SessionGate,
+    StreamRegistry,
+    StreamTicket,
     StreamTimers,
 )
 from common_lib.auth import AccessClaims, InvalidTokenError, RateLimitedError
@@ -54,6 +56,11 @@ _CLOSES = {
     Due.NO_HELLO: (Code.CODE_INVALID_REQUEST, HELLO_FIRST),
     Due.IDLE: (Code.CODE_TIMEOUT, "no heartbeat"),
 }
+# Ended from outside the stream (`StreamRegistry`): a revocation, or this process stopping.
+_ENDINGS = {
+    "revoked": (Code.CODE_UNAUTHENTICATED, "access revoked"),
+    "shutdown": (Code.CODE_UNAVAILABLE, "server restarting"),
+}
 _BEARER = "bearer "
 # Messages read ahead (each up to the receive cap): the handler is sequential, so beyond a
 # few, HTTP/2 flow control holds the client back instead of the backend's memory.
@@ -73,6 +80,7 @@ class _Stream:
     session_id: str
     claims: AccessClaims
     timers: StreamTimers
+    ticket: StreamTicket
     open: OpenSession | None = None
     reason: str | None = None  # why it closes; set once
     messages: int = field(default=0)
@@ -81,9 +89,16 @@ class _Stream:
 
 class SessionStream:
     def __init__(
-        self, gate: SessionGate, *, clock: Clock, metrics: StreamMetrics, tracer: Tracer
+        self,
+        gate: SessionGate,
+        registry: StreamRegistry,
+        *,
+        clock: Clock,
+        metrics: StreamMetrics,
+        tracer: Tracer,
     ) -> None:
         self._gate = gate
+        self._registry = registry
         self._clock = clock
         self._metrics = metrics
         self._tracer = tracer
@@ -93,19 +108,20 @@ class SessionStream:
     ) -> AsyncIterator[Response]:
         metadata = {k: v for k, v in (context.invocation_metadata() or ()) if isinstance(v, str)}
         claims = await self._open(metadata, context)
-        now = self._clock.now()
+        span = self._tracer.start_span(
+            "grpc xype.v1.SessionService/Session", context=extract(metadata), kind=SpanKind.SERVER
+        )
+        inbox: asyncio.Queue[Request] = asyncio.Queue(maxsize=INBOX)
+        reader = asyncio.create_task(_read(requests, inbox))
+        started, now = time.monotonic(), self._clock.now()
+        # Registered last before the `try` whose `finally` unregisters it.
         stream = _Stream(
             str(uuid7(now)),
             claims,
             StreamTimers(self._gate.policy, opened_at=now, token_expires_at=claims.expires_at),
-        )
-        span = self._tracer.start_span(
-            "grpc xype.v1.SessionService/Session", context=extract(metadata), kind=SpanKind.SERVER
+            self._registry.open(claims),
         )
         span.set_attribute("xype.session_id", stream.session_id)
-        inbox: asyncio.Queue[Request] = asyncio.Queue(maxsize=INBOX)
-        reader = asyncio.create_task(_read(requests, inbox))
-        started = time.monotonic()
         self._metrics.active.inc()
         try:
             with structlog.contextvars.bound_contextvars(
@@ -119,6 +135,7 @@ class SessionStream:
             logger.error("session.unhandled_error", error=type(bug).__name__)
             stream.reason = "internal"
         finally:
+            self._registry.close(stream.ticket)
             reader.cancel()
             try:
                 await _finish(reader)
@@ -154,6 +171,12 @@ class SessionStream:
     ) -> AsyncIterator[Response]:
         while stream.reason is None:
             now = self._clock.now()
+            ending = stream.ticket.reason
+            if ending is not None:
+                code, text = _ENDINGS[ending]
+                stream.reason = ending
+                yield messages.stream_error(now, stream.session_id, code, text)
+                return
             due = stream.timers.due(now)
             if due is Due.REFRESH:
                 expires = stream.timers.token_expires_at
@@ -164,7 +187,8 @@ class SessionStream:
                 stream.reason = due.value
                 yield messages.stream_error(now, stream.session_id, code, text)
                 return
-            request = await _next(inbox, reader, stream.timers.next_check(now))
+            wait_s = stream.timers.next_check(now)
+            request = await _next(inbox, reader, stream.ticket.ended, wait_s)
             if request is _Wait.TIMEOUT:
                 continue
             if request is _Wait.ENDED:
@@ -199,6 +223,13 @@ class SessionStream:
         try:
             return "ok", await self._dispatch(stream, request, body)
         except RefusedError as refused:
+            ending = stream.ticket.reason
+            if ending is not None:
+                # Revoked or drained while this message was handled: say that, not why
+                # the message itself failed (the key was deleted with the revocation).
+                stream.reason = ending
+                code, text = _ENDINGS[ending]
+                return "refused", self._error(correlation_id, code, text)
             # Before a valid Hello there is nothing to keep; after it, only a key past its
             # age ends the stream (the client mints a new key and reconnects).
             if stream.open is None or refused.reason == KEY_UNUSABLE:
@@ -211,7 +242,7 @@ class SessionStream:
             )
         except DependencyUnavailableError:
             stream.reason = "unavailable"
-            return "unavailable", self._error(correlation_id, Code.CODE_INTERNAL, "unavailable")
+            return "unavailable", self._error(correlation_id, Code.CODE_UNAVAILABLE, "unavailable")
         except Exception as bug:  # noqa: BLE001 - the transport boundary: the stream ends
             # Type only: an exception message may carry request content (rule 08).
             logger.error("session.unhandled_error", error=type(bug).__name__)
@@ -282,18 +313,26 @@ async def _read(requests: AsyncIterator[Request], inbox: asyncio.Queue[Request])
 
 
 async def _next(
-    inbox: asyncio.Queue[Request], reader: asyncio.Task[None], wait_s: float
+    inbox: asyncio.Queue[Request],
+    reader: asyncio.Task[None],
+    ended: asyncio.Event,
+    wait_s: float,
 ) -> Request | _Wait:
-    """The next client message, or why there is none yet."""
+    """The next client message, or why there is none yet (`TIMEOUT` also when the stream
+    was ended from outside: the loop checks that first)."""
     if inbox.empty() and reader.done():
         return _Wait.ENDED
     getter = asyncio.ensure_future(inbox.get())
+    ending = asyncio.ensure_future(ended.wait())
     try:
-        await asyncio.wait({getter, reader}, timeout=wait_s, return_when=asyncio.FIRST_COMPLETED)
+        await asyncio.wait(
+            {getter, reader, ending}, timeout=wait_s, return_when=asyncio.FIRST_COMPLETED
+        )
     finally:
-        # Also when this stream is cancelled while waiting: no getter is left behind.
-        if not getter.done():
-            getter.cancel()
+        # Also when this stream is cancelled while waiting: nothing is left behind.
+        for waiter in (getter, ending):
+            if not waiter.done():
+                waiter.cancel()
     if getter.done() and not getter.cancelled():
         return getter.result()
     return _Wait.TIMEOUT

@@ -3,7 +3,6 @@ role) and Redis (TLS, the backend's ACL user), as in deploy/docker-compose.yml (
 ADR-0014)."""
 
 import asyncio
-import json
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
@@ -24,6 +23,7 @@ from backend.dal.auth import (
     REVOCATION_CHANNEL,
     RedisRateLimiter,
     RedisRevocationPublisher,
+    RedisRevocationSubscriber,
     SqlRefreshTokenStore,
     SqlUserStore,
 )
@@ -201,39 +201,65 @@ async def test_a_login_verified_before_a_secret_rotation_starts_no_family(
     assert await login is False
 
 
-async def test_revocation_contract(redis_address: tuple[str, int], backend_redis: Redis) -> None:
-    """A subscriber (here the default user; the gateway's in slice 6) sees every message."""
-    subscriber = _redis(redis_address, "default", DEFAULT_PASSWORD)
-    pubsub = subscriber.pubsub()
-    await pubsub.subscribe(REVOCATION_CHANNEL)
-    await pubsub.get_message(timeout=5)  # the subscribe confirmation
+async def test_revocation_contract(backend_redis: Redis) -> None:
+    """Publisher and subscriber both as the backend's ACL user, as the gateway runs them."""
 
-    async def observed() -> list[Revocation]:
-        received = []
-        while message := await pubsub.get_message(ignore_subscribe_messages=True, timeout=2):
-            data = json.loads(message["data"])
-            received.append(Revocation(data["kind"], uuid.UUID(data["id"])))
-        return received
+    async def settle() -> None:
+        await asyncio.sleep(0.5)
 
+    await contract.assert_hears_revocations(
+        RedisRevocationPublisher(backend_redis),
+        RedisRevocationSubscriber(backend_redis),
+        settle=settle,
+    )
+
+
+async def test_the_subscriber_skips_what_is_not_a_revocation(
+    redis_address: tuple[str, int], backend_redis: Redis
+) -> None:
+    other = _redis(redis_address, "default", DEFAULT_PASSWORD)
+    revocations = RedisRevocationSubscriber(backend_redis).revocations()
+    first = asyncio.ensure_future(anext(revocations))
     try:
-        await contract.assert_publishes_revocations(
-            RedisRevocationPublisher(backend_redis), observed
+        await asyncio.sleep(0.5)
+        junk_messages = (
+            "not json",
+            f'{{"kind": "team", "id": "{uuid.uuid4()}"}}',
+            '{"kind": "user"}',
+            '{"kind": "user", "id": 5}',
+            '{"kind": "user", "id": "not-a-uuid"}',
+            "[1, 2]",
         )
+        for junk in junk_messages:
+            await other.publish(REVOCATION_CHANNEL, junk)
+        valid = Revocation("user", uuid.uuid4())
+        await RedisRevocationPublisher(backend_redis).publish(valid)
+        assert await asyncio.wait_for(first, timeout=5) == valid
     finally:
-        await pubsub.aclose()  # type: ignore[no-untyped-call]  # untyped in redis-py
-        await subscriber.aclose()
+        first.cancel()
+        await asyncio.gather(first, return_exceptions=True)
+        await revocations.aclose()
+        await other.aclose()
 
 
 @pytest.mark.parametrize(
     "command",
     [
         ("PUBLISH", "xype:other", "x"),
-        ("SUBSCRIBE", REVOCATION_CHANNEL),
+        ("SUBSCRIBE", "xype:other"),
+        ("PSUBSCRIBE", "xype:*"),
         ("SET", "outside:key", "x"),
         ("FLUSHALL",),
         ("CONFIG", "GET", "*"),
     ],
-    ids=["publish-elsewhere", "subscribe", "key-outside-prefix", "flushall", "config"],
+    ids=[
+        "publish-elsewhere",
+        "subscribe-elsewhere",
+        "psubscribe",
+        "key-outside-prefix",
+        "flushall",
+        "config",
+    ],
 )
 async def test_backend_acl_allows_only_what_the_adapters_need(
     backend_redis: Redis, command: tuple[object, ...]

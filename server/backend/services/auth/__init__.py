@@ -8,6 +8,7 @@ from backend.services.auth.ports import (
     RateLimiter,
     RefreshTokenStore,
     RevocationPublisher,
+    RevocationSubscriber,
     UserStore,
 )
 from backend.services.auth.service import AuthDependencies, AuthPolicy, AuthService
@@ -70,6 +71,7 @@ __all__ = [
     "Reused",
     "Revocation",
     "RevocationPublisher",
+    "RevocationSubscriber",
     "Role",
     "Rotated",
     "Rotation",

@@ -28,13 +28,14 @@ from backend.core.connections import (
 )
 from backend.core.session import session_gate, session_stream
 from backend.core.settings import BackendSettings
+from backend.dal.auth import RedisRevocationSubscriber
 from backend.dal.health import DatabaseProbe, RedisProbe
 from backend.dal.session import SqlRepositoryAccess
 from backend.grpc import SessionStream, create_grpc_server
 from backend.messaging.health import BrokerProbe
-from backend.services.auth import AuthDependencies
+from backend.services.auth import AuthDependencies, RevocationSubscriber
 from backend.services.health import DependencyProbe, HealthService
-from backend.services.session import RepositoryAccess
+from backend.services.session import RepositoryAccess, StreamRegistry, listen_for_revocations
 from common_lib.clock import Clock, SystemClock
 from common_lib.logging_config import configure_logging
 from common_lib.settings import load_settings
@@ -66,6 +67,7 @@ def create_app(
     probes: Sequence[DependencyProbe] | None = None,
     auth: AuthDependencies | None = None,
     repositories: RepositoryAccess | None = None,
+    revocations: RevocationSubscriber | None = None,
     clock: Clock | None = None,
 ) -> FastAPI:
     """Build the app. Settings come from the environment unless given; tests pass fakes."""
@@ -83,15 +85,16 @@ def create_app(
     clock = clock or SystemClock()
     auth = auth or auth_dependencies(settings, database, redis, keystore)
     repositories = repositories or SqlRepositoryAccess(database.read_sessions)
-    registry = CollectorRegistry()
-    tracer = tracer_provider.get_tracer(SERVICE_NAME)
+    revocations = revocations or RedisRevocationSubscriber(redis)
+    registry, tracer = CollectorRegistry(), tracer_provider.get_tracer(SERVICE_NAME)
     authentication = auth_service(settings, auth, clock)
     gate = session_gate(settings, authentication, auth, repositories, clock)
-    stream = session_stream(gate, clock=clock, registry=registry, tracer=tracer)
+    streams = StreamRegistry()
+    stream = session_stream(gate, streams, clock=clock, metrics=registry, tracer=tracer)
     closers = (database.dispose, redis.aclose, keystore.aclose)
     app = FastAPI(
         title="XYPE backend",
-        lifespan=_lifespan(settings, tracer_provider, closers, stream),
+        lifespan=_lifespan(settings, tracer_provider, closers, stream, streams, revocations),
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -113,9 +116,12 @@ def _lifespan(
     tracer_provider: TracerProvider,
     closers: Sequence[Callable[[], Awaitable[object]]],
     stream: SessionStream,
+    streams: StreamRegistry,
+    revocations: RevocationSubscriber,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
-    """Starts the Session stream server; on shutdown it stops first, so streams in flight
-    get the grace period, then the stores close and the last spans are flushed."""
+    """Starts the Session stream server and the revocation listener. On shutdown, in
+    order: every stream is told to reconnect elsewhere (drain), the server gives them the
+    grace period, the listener stops, the stores close, the last spans are flushed."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -126,13 +132,32 @@ def _lifespan(
             stack.push_async_callback(asyncio.to_thread, tracer_provider.shutdown)
             for close in closers:
                 stack.push_async_callback(close)
+            listener = asyncio.create_task(listen_for_revocations(revocations, streams))
+            listener.add_done_callback(_report_early_end)
+            stack.push_async_callback(_stop, listener)
             server, app.state.grpc_port = create_grpc_server(settings, stream)
             await server.start()
             stack.push_async_callback(server.stop, settings.stream_shutdown_grace_s)
+            stack.callback(streams.drain)
             yield
         logger.info("backend.stopped")
 
     return lifespan
+
+
+def _report_early_end(task: asyncio.Task[None]) -> None:
+    """The listener only ends by cancellation; anything else means streams now close at
+    their next message only, so it is logged (the type only) as soon as it happens."""
+    if not task.cancelled() and task.exception() is not None:
+        logger.error("session.revocations.listener_failed", error=type(task.exception()).__name__)
+
+
+async def _stop(task: asyncio.Task[None]) -> None:
+    """Cancels a background task and collects its end, so no error goes unretrieved."""
+    task.cancel()
+    (result,) = await asyncio.gather(task, return_exceptions=True)
+    if isinstance(result, Exception):
+        logger.error("backend.task_failed", error=type(result).__name__)
 
 
 def _mount(app: FastAPI, tracer: Tracer, metrics: HttpMetrics) -> None:

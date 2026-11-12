@@ -4,6 +4,7 @@ grpcio opens its sockets in native code, outside the network guard, so the serve
 127.0.0.1 only and the client dials it there (ADR-0012).
 """
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -22,7 +23,7 @@ from backend.core.auth import auth_service, client_admin, session_key_service
 from backend.core.session import session_gate
 from backend.core.settings import BackendSettings
 from backend.grpc import METHOD, SERVICE, SessionStream, StreamMetrics, create_grpc_server
-from backend.services.session import SessionGate
+from backend.services.session import SessionGate, StreamRegistry, listen_for_revocations
 from common_lib.auth import AccessClaims, Credential, NewClient
 from common_lib.clock import Clock
 from common_lib.secret_bytes import SecretBytes
@@ -52,6 +53,7 @@ class StreamWorld:
     registry: CollectorRegistry = field(default_factory=CollectorRegistry)
     port: int = 0
     gate: SessionGate | None = None
+    streams: StreamRegistry = field(default_factory=StreamRegistry)
 
     async def client(self, team: str = "Web") -> NewClient:
         admin = client_admin(self.settings, self.auth.deps, self.clock)
@@ -116,12 +118,18 @@ async def stream_server(
         clock,
     )
     tracer = TracerProvider().get_tracer("test")
-    handler = SessionStream(gate, clock=clock, metrics=StreamMetrics(world.registry), tracer=tracer)
+    metrics = StreamMetrics(world.registry)
+    handler = SessionStream(gate, world.streams, clock=clock, metrics=metrics, tracer=tracer)
     server, world.port = create_grpc_server(settings, handler)
+    # Revocations published by the fakes reach this server's streams, as over Redis.
+    subscriber = world.auth.revocations.subscriber()
+    listener = asyncio.create_task(listen_for_revocations(subscriber, world.streams))
     await server.start()
     try:
         yield world
     finally:
+        listener.cancel()
+        await asyncio.gather(listener, return_exceptions=True)
         await server.stop(0)
 
 

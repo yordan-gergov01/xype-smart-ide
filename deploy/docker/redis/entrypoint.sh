@@ -10,8 +10,9 @@
 # operators; each service gets its own ACL user: read, write and connection
 # commands only (no dangerous or admin ones). Of scripting, only EVALSHA and SCRIPT
 # LOAD (the rate limiter's and the key store's scripts). In the cache: keys under
-# `xype:`, and of pub/sub only PUBLISH to the one revocation channel (ADR-0014). In
-# the key store: keys under `xype:sk` only, and no pub/sub.
+# `xype:`, and of pub/sub only PUBLISH and SUBSCRIBE on the one revocation channel
+# (ADR-0014; every gateway replica listens). In the key store: keys under `xype:sk`
+# only, and no pub/sub.
 set -eu
 
 require() {
@@ -43,7 +44,7 @@ esac
 case "$REDIS_MODE" in
     cache)
         scope="resetchannels &xype:auth:revoked ~xype:*"
-        extra="+publish"
+        extra="+publish +subscribe +unsubscribe"
         memory="maxmemory 64mb
 maxmemory-policy allkeys-lru"
         ;;
