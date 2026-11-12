@@ -100,6 +100,8 @@ message StreamError {
     CODE_MODEL_UNAVAILABLE = 5;
     CODE_TIMEOUT = 6;
     CODE_INTERNAL = 7;
+    // The server is restarting or a store is down: reconnect with backoff.
+    CODE_UNAVAILABLE = 8;
   }
   Code code = 1;
   string message = 2; // a fixed server-side string per code; never request content

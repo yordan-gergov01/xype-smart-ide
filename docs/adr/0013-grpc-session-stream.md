@@ -67,7 +67,7 @@ Chosen option: **1**.
   - The client sends `Heartbeat` every `heartbeat_interval_s` (20 s, announced in `HelloAck`) and the server echoes it. After 60 s of silence the server closes with `CODE_TIMEOUT`. Settings refuse an idle timeout below twice the heartbeat interval.
   - Only a successful Hello stops the 10 s Hello deadline.
   - `TokenRefreshRequired` goes out 60 s before the token expires, and the stream closes with `CODE_UNAUTHENTICATED` at expiry. A stream therefore lives at most 15 minutes, and a reconnect mints a new session key.
-  - Revocation closes streams through the subscriber in slice 6b. Until then, a revoked user's stream lasts at most until its token expires.
+  - Revocation closes streams at once (slice 6b, below).
 - **Limits per stream.**
   - Messages are capped at 1 MiB, and at most 2 are read ahead, so one stream holds about 3 MiB at most. HTTP/2 flow control holds back a client that sends faster.
   - At most `STREAM_MAX_CONCURRENT` (32) streams per backend process; beyond that, new calls get `RESOURCE_EXHAUSTED`.
@@ -87,6 +87,26 @@ Chosen option: **1**.
   - Stream opens are limited to 20 a minute per IP, burst 10. Past that, a trailers-only `RESOURCE_EXHAUSTED` answer.
   - No request body limit for the stream (`client_max_body_size 0`); the backend caps each message.
   - Timeouts are 120 s, above the backend's idle timeout. A stream with heartbeats stayed open past 60 s through the proxy in the live check.
+
+### Implementation notes (Phase 2 slice 6b)
+
+- **Stream registry.** Each process keeps its open streams by user and by token family (`StreamRegistry`), from the moment a stream opens, so a stream is revocable even before Hello. A stream leaves the registry when it closes.
+- **Revocation channel.**
+  - Every backend process subscribes to `xype:auth:revoked` (`RedisRevocationSubscriber`, the backend's own ACL user: `+subscribe +unsubscribe` on that channel only; `PSUBSCRIBE` and other channels are refused).
+  - A revocation ends the matching streams with `CODE_UNAUTHENTICATED` (`access revoked`).
+  - The subscriber reconnects with a capped backoff (0.5 s to 10 s) and skips anything on the channel that is not a revocation, logging the type only.
+- **Key check on every message (the backstop).**
+  - Pub/sub delivers at most once: a message sent while a process reconnects is lost.
+  - Revocation deletes the session keys before it publishes (ADR-0015), and every stream message checks that its key still exists and is still bound to this stream (`bind_stream`, idempotent).
+  - So a revoked stream ends at its next message (heartbeats every 20 s) even without the message.
+  - Side effects:
+    - a key store outage ends every stream at its next message (`CODE_UNAVAILABLE`, fail closed);
+    - a user's ninth window evicts the oldest key (ADR-0015), and that window's stream now ends at its next message. The extension must not reconnect in a loop on `session key unknown, expired or not yours`, and should tell the user there are too many windows (slice 11).
+- **Drain on shutdown.**
+  - The lifespan tells every stream `CODE_UNAVAILABLE` (`server restarting`) first, and any stream opened from then on at once.
+  - Then the gRPC server gives them the grace period, the listener stops, and the stores close.
+  - Clients reconnect, through the edge, to another replica or the restarted one.
+- **New code** `StreamError.CODE_UNAVAILABLE = 8` ("reconnect with backoff"), also used when a store is down (it was `CODE_INTERNAL`).
 
 ### Consequences
 

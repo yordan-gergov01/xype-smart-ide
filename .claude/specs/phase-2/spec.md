@@ -48,11 +48,12 @@ Every slice that adds a message naming a repository adds a cross-team negative t
 
 Slice 6 is cut in two (owner, 2026-11-12):
 - 6a: code generation and `Hello.repository_roots`; the `grpc.aio` server with TLS and auth on open; Hello/HelloAck with key and repository checks; heartbeat, `TokenRefreshRequired` and the token-expiry close; rate limit and `StreamError`; edge `grpc_pass` with the per-IP open limit.
-- 6b: the revocation subscriber (`+subscribe` for `xype:auth:revoked` in the cache ACL) and a per-process stream registry that closes the matching streams; drain on shutdown beyond the grace period.
+- 6b (done): the revocation subscriber (`+subscribe` for `xype:auth:revoked` in the cache ACL) and a per-process stream registry that closes the matching streams; drain on shutdown beyond the grace period.
 
 Carried forward from slice 6a:
 - Slices 7, 8, 11: each slice that handles a stream message extracts every repository id it carries (nested `ChunkRef`s included) for `SessionGate.message`, and adds a stream-level cross-team test.
-- Slice 6b: a stream whose session key was revoked or evicted after Hello stops at once: the revocation subscriber closes it, and a message checks that the key still exists (today it is caught at the first payload's `advance_nonce`, slice 8).
+- Slice 6b (done): a stream whose session key was revoked or evicted after Hello stops at once: the revocation subscriber closes it, and a message checks that the key still exists (today it is caught at the first payload's `advance_nonce`, slice 8).
+- Slice 11: on `session key unknown, expired or not yours` the extension mints one new key and reconnects once; if that fails again it stops and tells the user (more windows than the 8-key cap). On `CODE_UNAVAILABLE` it reconnects with backoff.
 - Slice 8 (first payload): the per-direction use-count limit (2^24) next to the key-age check on every payload.
 - Slice 7: compare `Hello.repository_roots` with the server's roots and start the Merkle sync.
 - Slice 11: the extension's client sends heartbeats every `heartbeat_interval_s` and reconnects on `TokenRefreshRequired`, a `StreamError` or a close.

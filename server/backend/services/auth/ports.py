@@ -2,7 +2,7 @@
 contract suites in tests/support (rule 03)."""
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
 from typing import Protocol
 
@@ -105,3 +105,12 @@ class RevocationPublisher(Protocol):
     """Tells every gateway replica that a user or a token family is revoked."""
 
     async def publish(self, revocation: Revocation) -> None: ...
+
+
+class RevocationSubscriber(Protocol):
+    """Hears what `RevocationPublisher` sends, on every gateway replica. At most once:
+    callers must not rely on it alone (the stream also re-checks its session key)."""
+
+    def revocations(self) -> AsyncIterator[Revocation]:
+        """Revocations published from now on, until cancelled."""
+        ...

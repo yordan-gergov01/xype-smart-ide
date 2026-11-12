@@ -14,6 +14,11 @@ from backend.services.session.gate import (
     SessionGate,
 )
 from backend.services.session.ports import RepositoryAccess
+from backend.services.session.registry import (
+    StreamRegistry,
+    StreamTicket,
+    listen_for_revocations,
+)
 from backend.services.session.timers import Due, StreamPolicy, StreamTimers
 
 __all__ = [
@@ -30,5 +35,8 @@ __all__ = [
     "SessionError",
     "SessionGate",
     "StreamPolicy",
+    "StreamRegistry",
+    "StreamTicket",
     "StreamTimers",
+    "listen_for_revocations",
 ]

@@ -67,7 +67,7 @@ Chosen option: **1**, because it keeps the hot path local (one signature check) 
 
 - The access token travels in the `authorization` metadata when the stream opens. The server then checks that the user is still active (ADR-0013).
 - Before `exp` the server sends `TokenRefreshRequired`. The client refreshes over REST and reopens the stream, and the server closes a stream whose token has expired.
-- Disabling a user, or revoking a family, publishes a revocation on the Redis channel `xype:auth:revoked` that every gateway replica subscribes to. Each replica closes the matching streams.
+- Disabling a user, or revoking a family, publishes a revocation on the Redis channel `xype:auth:revoked` that every gateway replica subscribes to. Each replica closes the matching streams (Phase 2 slice 6b). The channel delivers at most once, so the stream also re-checks its session key on every message (ADR-0013).
 
 ### OIDC-ready seam
 

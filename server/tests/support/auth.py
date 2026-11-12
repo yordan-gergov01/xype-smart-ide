@@ -1,9 +1,10 @@
 """In-memory fakes of the auth seams (rule 03); the shared contracts in
 support/contracts/auth.py hold them to the same behaviour as the real adapters."""
 
+import asyncio
 import math
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
@@ -186,8 +187,27 @@ class FakeRateLimiter:
 
 
 class FakeRevocationPublisher:
+    """Keeps what it published and, like the channel, delivers it to every subscriber."""
+
     def __init__(self) -> None:
         self.published: list[Revocation] = []
+        self._subscribers: list[asyncio.Queue[Revocation]] = []
 
     async def publish(self, revocation: Revocation) -> None:
         self.published.append(revocation)
+        for queue in self._subscribers:
+            queue.put_nowait(revocation)
+
+    def subscriber(self) -> "FakeRevocationSubscriber":
+        queue: asyncio.Queue[Revocation] = asyncio.Queue()
+        self._subscribers.append(queue)
+        return FakeRevocationSubscriber(queue)
+
+
+class FakeRevocationSubscriber:
+    def __init__(self, queue: asyncio.Queue[Revocation]) -> None:
+        self._queue = queue
+
+    async def revocations(self) -> AsyncIterator[Revocation]:
+        while True:
+            yield await self._queue.get()

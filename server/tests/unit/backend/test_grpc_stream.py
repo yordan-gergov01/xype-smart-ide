@@ -174,7 +174,9 @@ async def test_opening_fails_closed_without_the_limiter_store() -> None:
 
 async def test_the_app_lifespan_serves_the_stream() -> None:
     settings = make_settings()
-    app = create_app(settings, probes=[], auth=FakeAuth(settings).deps)
+    fakes = FakeAuth(settings)
+    revocations = fakes.revocations.subscriber()
+    app = create_app(settings, probes=[], auth=fakes.deps, revocations=revocations)
     async with app.router.lifespan_context(app):
         credentials = grpc.ssl_channel_credentials(root_certificates=ca_file().read_bytes())
         target = f"127.0.0.1:{app.state.grpc_port}"
@@ -323,6 +325,7 @@ async def test_a_failed_read_ends_the_stream_and_logs_only_the_type(
 
         stream = SessionStream(
             world.gate,  # type: ignore[arg-type]  # reason: set by stream_server
+            world.streams,
             clock=world.clock,
             metrics=StreamMetrics(CollectorRegistry()),
             tracer=TracerProvider().get_tracer("test"),
