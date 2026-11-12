@@ -58,10 +58,12 @@ jobs:
           python -m pip install -e . --no-deps
       - name: Requirements are compiled from the .in files
         run: |
-          for name in backend dev; do
+          for name in backend codegen dev; do
             uv pip compile --universal --generate-hashes --python-version 3.12 --quiet "requirements/${name}.in" -o "requirements/${name}.txt"
           done
           git diff --exit-code -- requirements/
+      # Protobuf modules for mypy and the tests (server/gen, not committed; ADR-0013).
+      - run: python -m devtools.gen_proto
       - run: ruff format --check .
       - run: ruff check .
       - run: mypy
@@ -86,6 +88,7 @@ jobs:
         run: |
           python -m pip install --require-hashes -r requirements/dev.txt
           python -m pip install -e . --no-deps
+      - run: python -m devtools.gen_proto
       # Testcontainers (Postgres + pgvector and the backend probes). The embedder test needs
       # the local model volume from compose and runs on developer machines only (`models`).
       - run: pytest -m "integration and not models"

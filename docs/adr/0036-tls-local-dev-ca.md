@@ -38,10 +38,16 @@ already installed.
 Chosen option: **1**.
 
 - **CA**: ECDSA P-256, valid 2 years, `pathlen:0`, and critical **name constraints**: it
-  may issue only for the stack's service names, `localhost` (and `*.localhost`) and
-  `127.0.0.0/8`. A leaked key can therefore still impersonate any loopback service to a
-  client that trusts this CA, which is why the CA is never imported into an OS trust
-  store (`docs/runbooks/local-dev.md`). The CA key stays in `deploy/certs/ca.key` and is
+  may issue only for the stack's service names and `localhost` (and `*.localhost`).
+  IP names are not constrained (Phase 2 slice 6a, owner's decision 2026-11-12):
+  - grpcio's TLS stack (BoringSSL) refuses any chain whose CA has an IP name constraint;
+  - leaves keep their `127.0.0.1` name, so a leaked key could sign for any IP address;
+  - the generator refuses an older CA that still has the constraint and asks for
+    `--rotate-ca`.
+
+  A leaked key can therefore impersonate a stack service to a client that trusts this
+  CA, which is why the CA is never imported into an OS trust store
+  (`docs/runbooks/local-dev.md`). The CA key stays in `deploy/certs/ca.key` and is
   never mounted into a container. File modes protect the keys on Linux and macOS (folder
   0700, CA key 0600). On Windows, `chmod` only sets the read-only flag: the keys are as
   readable as the checkout's folder, so keep the repository under the user profile, or

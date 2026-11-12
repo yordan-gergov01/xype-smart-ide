@@ -53,7 +53,7 @@ CI also runs the testcontainers integration tests (Postgres + pgvector, probes).
 - Bad: the network guard covers the Python test process only:
   - A container a test starts has its own network; the Ollama test container sits on Docker's default bridge, with cloud models off.
   - A model server already running on this machine is reachable on loopback.
-  - Native code that opens sockets without the `socket` module (grpcio, when gRPC tests arrive: then add a no-egress network for the CI test job), direct `_socket` use and subprocesses are not covered.
+  - Native code that opens sockets without the `socket` module, direct `_socket` use and subprocesses are not covered. grpcio is such native code: its test servers bind `127.0.0.1` only and the test clients dial them there (`tests/support/backend.py`, `tests/support/streams.py`). No test opens a gRPC channel to anything else, and gRPC never talks to a model provider. A no-egress network for the CI test job is not needed for this.
   - Reverse lookups are not guarded, and a `*.localhost` lookup may reach the system's DNS resolver (the name only).
   - The configuration check reads one assignment per line; a value set inside a command line, a YAML flow collection or a block scalar is not parsed.
 - Bad: the embedder integration test is not run in CI.

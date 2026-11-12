@@ -15,6 +15,10 @@ asyncpg
 alembic
 # The vector(1024) column type for SQLAlchemy.
 pgvector
+# The gRPC Session stream (ADR-0013); `grpc.aio` server. Its protobuf runtime comes with
+# the OTLP exporter already.
+grpcio
+protobuf
 # Redis cache (brief §1).
 redis
 # RabbitMQ client; the readiness probe connects with it.

@@ -7,7 +7,8 @@
 !common_lib/
 !requirements/
 !tests/
-# The dev CA generator, for the test stage only (the runtime stage never copies it).
+# The dev CA generator (test stage) and the protobuf generator (codegen stage); the
+# runtime stage copies neither.
 !devtools/
 !pyproject.toml
 

@@ -92,9 +92,10 @@ def _write(path: Path, data: bytes, mode: int) -> None:
 
 
 def _permitted_names(services: tuple[str, ...]) -> list[x509.GeneralName]:
-    names: list[x509.GeneralName] = [x509.DNSName(s) for s in (*services, LOOPBACK_DNS)]
-    names.append(x509.IPAddress(ipaddress.ip_network("127.0.0.0/8")))
-    return names
+    """DNS names only. grpcio's TLS stack (BoringSSL) refuses a chain whose CA has an IP
+    name constraint, so IP names stay unconstrained (ADR-0036): a leaked dev CA could sign
+    for any IP address, which matters only where this CA is trusted."""
+    return [x509.DNSName(s) for s in (*services, LOOPBACK_DNS)]
 
 
 def create_ca(services: tuple[str, ...], now: datetime) -> Authority:
@@ -221,7 +222,17 @@ def _ensure_ca(out_dir: Path, services: tuple[str, ...], rotate: bool, now: date
     if missing:
         # Its name constraints would make every client refuse a leaf for these names.
         raise DevCaError(f"the dev CA does not cover {', '.join(missing)}; run with --rotate-ca")
+    if _has_ip_constraint(ca.cert):
+        raise DevCaError(
+            "the dev CA has an IP name constraint gRPC cannot verify; run with --rotate-ca"
+        )
     return ca
+
+
+def _has_ip_constraint(cert: x509.Certificate) -> bool:
+    constraints = cert.extensions.get_extension_for_class(x509.NameConstraints).value
+    subtrees = [*(constraints.permitted_subtrees or []), *(constraints.excluded_subtrees or [])]
+    return any(isinstance(n, x509.IPAddress) for n in subtrees)
 
 
 def _covered_names(cert: x509.Certificate) -> set[str]:

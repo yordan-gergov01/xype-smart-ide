@@ -17,6 +17,11 @@ type TaskType = Literal[
 _HMAC_HEX = re.compile(r"[0-9a-f]{64}")
 
 
+def is_hmac_hex(value: str) -> bool:
+    """An HMAC-SHA256 or a Merkle hash as 64 lowercase hex characters."""
+    return _HMAC_HEX.fullmatch(value) is not None
+
+
 @dataclass(frozen=True, slots=True)
 class RequestContext:
     """Who is asking and why; propagated to every call, log and metric."""

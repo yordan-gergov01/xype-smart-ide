@@ -7,6 +7,8 @@ from typing import Any
 import pytest
 import yaml
 
+from backend.core.settings import BackendSettings
+
 ROOT = Path(__file__).resolve().parents[4]
 DEPLOY = ROOT / "deploy"
 COMPOSE: dict[str, Any] = yaml.safe_load((DEPLOY / "docker-compose.yml").read_text("utf-8"))
@@ -196,3 +198,32 @@ def test_the_key_store_never_evicts_and_scopes_the_backend_to_its_keys() -> None
     assert "maxmemory-policy noeviction" in keystore
     assert 'scope="resetchannels ~xype:sk*"' in keystore
     assert 'extra=""' in keystore
+
+
+def test_the_session_stream_goes_through_the_edge_over_verified_tls() -> None:
+    """grpcs to the backend with its certificate checked, the stream not cut by the REST
+    body limit or by timeouts shorter than the backend's own (ADR-0013, ADR-0036)."""
+    nginx = (DEPLOY / "docker" / "edge" / "nginx.conf").read_text("utf-8")
+    block = nginx[nginx.index("location = /xype.v1.SessionService/Session {") :]
+    block = block[: block.index("}")]
+    for line in (
+        "grpc_pass grpcs://backend_grpc;",
+        "grpc_ssl_verify on;",
+        "grpc_ssl_trusted_certificate /certs/ca.crt;",
+        "grpc_ssl_name backend;",
+        "limit_req zone=stream_per_ip",
+        "limit_conn streams_open_per_ip",
+        "client_max_body_size 0;",
+        'grpc_set_header traceparent "";',
+    ):
+        assert line in block
+    assert re.search(r"upstream backend_grpc \{\s*server backend:50051;", nginx)
+    timeouts = re.findall(r"(?:client_body|grpc_read|grpc_send)_timeout (\d+)s;", block)
+    assert len(timeouts) == 3
+    # Even the largest idle timeout the settings allow stays below the proxy's.
+    idle = BackendSettings.model_fields["stream_idle_timeout_s"].metadata
+    longest = max(m.le for m in idle if hasattr(m, "le"))
+    assert all(int(t) > longest for t in timeouts)
+    backend = SERVICES["backend"]
+    assert backend["environment"]["GRPC_LISTEN_ADDRESS"] == "0.0.0.0:50051"
+    assert backend["build"]["additional_contexts"] == {"proto": "../proto"}

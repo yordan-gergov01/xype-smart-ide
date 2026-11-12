@@ -35,6 +35,59 @@ Chosen option: **1**.
 - buf v2: `STANDARD` lint and `buf format` in `npm run check` and pre-commit; `FILE` breaking rules against the base branch in CI once it holds the module. Generated stubs are not committed.
 - REST under `/api/v1` reuses these messages through the proto3 JSON mapping (listed in `session.proto`).
 
+### Implementation notes (Phase 2 slice 6a)
+
+- **Code generation.**
+  - `devtools.gen_proto` (grpcio-tools) writes `server/gen/xype/v1/*_pb2.py` and `.pyi` files. They are never committed; pre-commit, CI and the image's `codegen` stage run it.
+  - The runtime image has only the output and `grpcio`, never the generator.
+  - No service stubs are generated. `backend.grpc` registers its one method with `grpc.method_handlers_generic_handler`, which keeps it under mypy strict. The generated `.pyi` files are exempt from strict errors only.
+  - Only `backend.grpc` may import the generated modules (import contract).
+- **Server.**
+  - `grpc.aio` runs in the backend process, started and stopped by the app's lifespan, on `GRPC_LISTEN_ADDRESS`. In the stack that is port 50051, reached only from the edge proxy.
+  - It serves TLS with the backend's certificate. It reads the certificate and key once at startup (a short blocking read in the lifespan).
+  - Shutdown gives open streams `STREAM_SHUTDOWN_GRACE_S` (5 s, at most 10 s; `stop_grace_period` is 30 s).
+  - Logs on a stream carry its `session_id` and a valid `x-correlation-id` from the call's metadata.
+- **Layers.**
+  - `backend.grpc` is transport only. `backend.services.session` holds the rules: `SessionGate` and `StreamTimers`, a pure state machine tested on a fixed clock.
+  - `RepositoryAccess` (DAL `SqlRepositoryAccess`, a fake, and a shared contract) answers which repositories a team may use.
+- **Opening.** A missing, malformed or invalid bearer token aborts the call with `UNAUTHENTICATED` (`invalid_token`). The rate limit gives `RESOURCE_EXHAUSTED`, and a missing store gives `UNAVAILABLE`. Opening counts as a request against the per-user limit.
+- **Hello first,** within `STREAM_HELLO_TIMEOUT_S` (10 s). The gate checks the following, in order:
+  - the repository ids: unique UUIDs, at most `STREAM_MAX_REPOSITORIES`;
+  - `repository_roots` (new field 6): a subset of `repository_ids`, each 64 hex characters; validated now, compared with the server's roots in slice 7;
+  - that every repository belongs to the caller's team;
+  - that the session key exists and belongs to the caller's user **and token family**, so a key from another IDE window is refused;
+  - that the key is younger than 12 h (`check_key_age`);
+  - then `bind_stream`.
+
+  Any refusal before a valid Hello ends the stream with a `StreamError`.
+- **Later messages.** Each one counts against the per-user limit and checks the key's age again. The top-level repository id of `ChunkUpload` and `MerkleTreeReport` must be one authorized at Hello. Nested `ChunkRef`s and the other messages that name repositories are checked by the slice that handles them; until then they are refused as unsupported.
+  - Messages whose handling has not landed yet are refused (`message not supported yet`), and the stream stays open.
+  - A key past its age ends the stream.
+- **Timers.**
+  - The client sends `Heartbeat` every `heartbeat_interval_s` (20 s, announced in `HelloAck`) and the server echoes it. After 60 s of silence the server closes with `CODE_TIMEOUT`. Settings refuse an idle timeout below twice the heartbeat interval.
+  - Only a successful Hello stops the 10 s Hello deadline.
+  - `TokenRefreshRequired` goes out 60 s before the token expires, and the stream closes with `CODE_UNAUTHENTICATED` at expiry. A stream therefore lives at most 15 minutes, and a reconnect mints a new session key.
+  - Revocation closes streams through the subscriber in slice 6b. Until then, a revoked user's stream lasts at most until its token expires.
+- **Limits per stream.**
+  - Messages are capped at 1 MiB, and at most 2 are read ahead, so one stream holds about 3 MiB at most. HTTP/2 flow control holds back a client that sends faster.
+  - At most `STREAM_MAX_CONCURRENT` (32) streams per backend process; beyond that, new calls get `RESOURCE_EXHAUSTED`.
+  - Five rate-limited messages in a row close the stream (`rate_limited`).
+  - At most 16 streams per HTTP/2 connection, and pings no more often than every 10 s.
+  - nginx allows 64 open streams per client IP.
+- **Errors.**
+  - `StreamError.message` is a fixed string per refusal.
+  - An unexpected error ends the stream with `CODE_INTERNAL` (`internal error`) and logs the exception type only.
+  - The reader task's end is always collected, and so is the pending read when a stream is cancelled. A failed read logs its type only and closes the stream as `read_failed`.
+  - Responses carry an `Envelope` with a UUIDv7 message id and the request's message id as `correlation_id`.
+  - Logs and spans carry ids and outcomes only.
+- **Metrics:** `xype_grpc_stream_opens_total{outcome}`, `xype_grpc_streams_active`, `xype_grpc_stream_messages_total{kind,outcome}`, `xype_grpc_streams_closed_total{reason}` and `xype_grpc_stream_duration_seconds`.
+- **Edge proxy.**
+  - `grpc_pass grpcs://` to the backend, with `grpc_ssl_verify` against the dev CA and the name `backend`.
+  - Client trace headers are dropped.
+  - Stream opens are limited to 20 a minute per IP, burst 10. Past that, a trailers-only `RESOURCE_EXHAUSTED` answer.
+  - No request body limit for the stream (`client_max_body_size 0`); the backend caps each message.
+  - Timeouts are 120 s, above the backend's idle timeout. A stream with heartbeats stayed open past 60 s through the proxy in the live check.
+
 ### Consequences
 
 - Good: server requests, tool calls and progress share one connection with one auth and one rate limit; the contract is checked mechanically.

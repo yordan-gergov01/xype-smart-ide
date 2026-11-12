@@ -5,11 +5,12 @@ startup; readiness reports which dependency is missing.
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
+from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.trace import Tracer
 from prometheus_client import CollectorRegistry
 from redis.asyncio import Redis
@@ -25,11 +26,15 @@ from backend.core.connections import (
     create_keystore_client,
     create_redis_client,
 )
+from backend.core.session import session_gate, session_stream
 from backend.core.settings import BackendSettings
 from backend.dal.health import DatabaseProbe, RedisProbe
+from backend.dal.session import SqlRepositoryAccess
+from backend.grpc import SessionStream, create_grpc_server
 from backend.messaging.health import BrokerProbe
 from backend.services.auth import AuthDependencies
 from backend.services.health import DependencyProbe, HealthService
+from backend.services.session import RepositoryAccess
 from common_lib.clock import Clock, SystemClock
 from common_lib.logging_config import configure_logging
 from common_lib.settings import load_settings
@@ -60,6 +65,7 @@ def create_app(
     *,
     probes: Sequence[DependencyProbe] | None = None,
     auth: AuthDependencies | None = None,
+    repositories: RepositoryAccess | None = None,
     clock: Clock | None = None,
 ) -> FastAPI:
     """Build the app. Settings come from the environment unless given; tests pass fakes."""
@@ -76,33 +82,57 @@ def create_app(
         probes = _default_probes(settings, database, redis, keystore)
     clock = clock or SystemClock()
     auth = auth or auth_dependencies(settings, database, redis, keystore)
-
-    @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        logger.info("backend.started")
-        # Each step runs even if an earlier one fails (exit stack: last pushed, first run).
-        async with AsyncExitStack() as stack:
-            # The final span flush is a blocking network call: off the event loop.
-            stack.push_async_callback(asyncio.to_thread, tracer_provider.shutdown)
-            stack.push_async_callback(database.dispose)
-            stack.push_async_callback(redis.aclose)
-            stack.push_async_callback(keystore.aclose)
-            yield
-        logger.info("backend.stopped")
-
-    app = FastAPI(
-        title="XYPE backend", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
-    )
+    repositories = repositories or SqlRepositoryAccess(database.read_sessions)
     registry = CollectorRegistry()
+    tracer = tracer_provider.get_tracer(SERVICE_NAME)
+    authentication = auth_service(settings, auth, clock)
+    gate = session_gate(settings, authentication, auth, repositories, clock)
+    stream = session_stream(gate, clock=clock, registry=registry, tracer=tracer)
+    closers = (database.dispose, redis.aclose, keystore.aclose)
+    app = FastAPI(
+        title="XYPE backend",
+        lifespan=_lifespan(settings, tracer_provider, closers, stream),
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
     app.state.metrics_registry = registry
     app.state.tracer_provider = tracer_provider
     app.state.health_service = HealthService(
         probes, timeout_seconds=settings.readiness_timeout_seconds
     )
-    app.state.auth_service = auth_service(settings, auth, clock)
+    app.state.auth_service = authentication
     app.state.session_key_service = session_key_service(settings, auth, clock)
-    _mount(app, tracer_provider.get_tracer(SERVICE_NAME), HttpMetrics(registry))
+    app.state.session_stream = stream
+    _mount(app, tracer, HttpMetrics(registry))
     return app
+
+
+def _lifespan(
+    settings: BackendSettings,
+    tracer_provider: TracerProvider,
+    closers: Sequence[Callable[[], Awaitable[object]]],
+    stream: SessionStream,
+) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+    """Starts the Session stream server; on shutdown it stops first, so streams in flight
+    get the grace period, then the stores close and the last spans are flushed."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        logger.info("backend.started")
+        # Each step runs even if an earlier one fails (exit stack: last pushed, first run).
+        async with AsyncExitStack() as stack:
+            # The final span flush is a blocking network call: off the event loop.
+            stack.push_async_callback(asyncio.to_thread, tracer_provider.shutdown)
+            for close in closers:
+                stack.push_async_callback(close)
+            server, app.state.grpc_port = create_grpc_server(settings, stream)
+            await server.start()
+            stack.push_async_callback(server.stop, settings.stream_shutdown_grace_s)
+            yield
+        logger.info("backend.stopped")
+
+    return lifespan
 
 
 def _mount(app: FastAPI, tracer: Tracer, metrics: HttpMetrics) -> None:

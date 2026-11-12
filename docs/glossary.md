@@ -38,7 +38,11 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Scrub corpus**: the shared, synthetic test cases (`packages/scrub-rules/corpus.json`) that both scrubber implementations must reproduce exactly.
 
-**Session stream**: the persistent bidirectional gRPC connection between one IDE window and the server.
+**Session stream**: the persistent bidirectional gRPC connection between one IDE window and the server. It lives at most as long as its access token and closes with a `StreamError` (ADR-0013).
+
+**Session gate**: the session service's checks on a stream: the token when it opens, the session key and repositories at Hello, and the rate limit and repositories on every later message (ADR-0013).
+
+**Hello**: the first message on a session stream; it names the session key and the repositories the window works on.
 
 **Session key**: the AES-256 key, issued per session and user, that encrypts code between the client and the server (ADR-0015).
 

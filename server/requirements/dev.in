@@ -1,6 +1,7 @@
 # Local development and test tooling on top of the services' dependencies; the
 # constraints keep shared packages at the versions the services use.
 -r backend.in
+-r codegen.in
 -c backend.txt
 
 # Compile: see server/README.md, "Adding or upgrading a dependency".
@@ -13,6 +14,10 @@ pytest
 pytest-asyncio
 pytest-cov
 import-linter
+# Type stubs for grpcio and protobuf, so the servicer, the generated message stubs and
+# the test clients pass mypy --strict.
+types-grpcio
+types-protobuf
 # Real Postgres, Redis and RabbitMQ for the integration tests.
 testcontainers
 pre-commit

@@ -46,16 +46,27 @@ on later changes. A privacy suite proves that no plaintext lands anywhere on the
 
 Every slice that adds a message naming a repository adds a cross-team negative test.
 
+Slice 6 is cut in two (owner, 2026-11-12):
+- 6a: code generation and `Hello.repository_roots`; the `grpc.aio` server with TLS and auth on open; Hello/HelloAck with key and repository checks; heartbeat, `TokenRefreshRequired` and the token-expiry close; rate limit and `StreamError`; edge `grpc_pass` with the per-IP open limit.
+- 6b: the revocation subscriber (`+subscribe` for `xype:auth:revoked` in the cache ACL) and a per-process stream registry that closes the matching streams; drain on shutdown beyond the grace period.
+
+Carried forward from slice 6a:
+- Slices 7, 8, 11: each slice that handles a stream message extracts every repository id it carries (nested `ChunkRef`s included) for `SessionGate.message`, and adds a stream-level cross-team test.
+- Slice 6b: a stream whose session key was revoked or evicted after Hello stops at once: the revocation subscriber closes it, and a message checks that the key still exists (today it is caught at the first payload's `advance_nonce`, slice 8).
+- Slice 8 (first payload): the per-direction use-count limit (2^24) next to the key-age check on every payload.
+- Slice 7: compare `Hello.repository_roots` with the server's roots and start the Merkle sync.
+- Slice 11: the extension's client sends heartbeats every `heartbeat_interval_s` and reconnects on `TokenRefreshRequired`, a `StreamError` or a close.
+
 Carried forward from slice 5b:
-- Slice 6: call `check_key_age` (12 h) and the use-count limit on `Hello` and on each payload; the stream closes with `TokenRefreshRequired` or a fixed `StreamError` when the key is too old.
+- Slice 6 (done in 6a: `check_key_age` on Hello and every message; the use-count limit moves to slice 8): call `check_key_age` (12 h) and the use-count limit on `Hello` and on each payload; the stream closes with `TokenRefreshRequired` or a fixed `StreamError` when the key is too old.
 - Slice 7: `/session-key` takes `repository_ids` and returns the wrapped repository keys (additive: the request model forbids unknown fields today).
 - Slice 8: the indexer's `keystore` ACL user (`-@all +get %R~xype:sk:*`), the indexer joins `keys`, and the compose test's `keys` members become `{keystore, backend, indexer}`; re-measure `keystore` memory.
 
 Carried forward from slice 3 (review):
 - Slice 5b (done: `check_key_age` and `expires_at`; the calls move to slice 6, above): enforce the 12-hour maximum session-key age from `created_at`.
-- Slice 6: the revocation subscriber closes the matching streams (the publisher lands in 5a); the backend's Redis ACL gains `+subscribe` for `xype:auth:revoked`; the edge proxy rate-limits stream opens per IP.
+- Slice 6 (per-IP open limit done in 6a; the rest is 6b): the revocation subscriber closes the matching streams (the publisher lands in 5a); the backend's Redis ACL gains `+subscribe` for `xype:auth:revoked`; the edge proxy rate-limits stream opens per IP.
 - Slice 8: record a received nonce counter only after `CryptoBox.open` succeeded (the first payload is opened in the indexer).
-- Slice 6: the gRPC server serves TLS with the backend's certificate and the edge proxy forwards with `grpc_pass grpcs://` and `grpc_ssl_verify on` (ADR-0036).
+- Slice 6 (done in 6a): the gRPC server serves TLS with the backend's certificate and the edge proxy forwards with `grpc_pass grpcs://` and `grpc_ssl_verify on` (ADR-0036).
 - Slice 5b (done): the `keystore` Redis gets its own leaf (`SERVICES` in `server/devtools/dev_ca.py`; existing CAs need `--rotate-ca`), TLS-only like `redis`, and the key-store client uses `common_lib.tls`; its backend ACL allows `EVALSHA`/`SCRIPT LOAD`.
 - Slice 8: the indexer image includes `packages/scrub-rules/rules.json`; the re-check refuses chunks over 64 KiB and runs in `asyncio.to_thread`; `cryptography` goes into the indexer's requirements.
 

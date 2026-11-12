@@ -1,5 +1,6 @@
-"""The auth adapters meet the shared contracts against Postgres (migrated, app role) and
-Redis (TLS, the backend's ACL user), as in deploy/docker-compose.yml (ADR-0014)."""
+"""The auth and session adapters meet the shared contracts against Postgres (migrated, app
+role) and Redis (TLS, the backend's ACL user), as in deploy/docker-compose.yml (ADR-0013,
+ADR-0014)."""
 
 import asyncio
 import json
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from support import containers
 from support.contracts import auth as contract
 from support.database import Database, alembic, postgres
+from support.session import assert_only_the_teams_repositories
 from support.tls import ca_file
 
 from backend.dal.auth import (
@@ -25,9 +27,10 @@ from backend.dal.auth import (
     SqlRefreshTokenStore,
     SqlUserStore,
 )
+from backend.dal.session import SqlRepositoryAccess
 from backend.services.auth import RateLimiter, RefreshTokenStore, UserStore
 from common_lib.auth import Reused, Revocation, Rotated
-from common_lib.models import RefreshToken, User
+from common_lib.models import RefreshToken, Repository, User
 from common_lib.models.connection import postgres_url
 from common_lib.tls import MINIMUM_TLS, client_context
 
@@ -251,3 +254,20 @@ async def test_a_loaded_script_is_held_to_the_same_acl(backend_redis: Redis, bod
     # CONFIG is refused in any script; the ACL refuses the rest.
     with pytest.raises(ResponseError, match=r"ACL failure in script|not allowed from script"):
         await backend_redis.evalsha(sha, 0)
+
+
+async def test_repository_access_contract(sessions: async_sessionmaker[AsyncSession]) -> None:
+    users = SqlUserStore(sessions)
+    teams = (
+        await users.create_team(f"repos-{uuid.uuid4().hex[:8]}"),
+        await users.create_team(f"repos-{uuid.uuid4().hex[:8]}"),
+    )
+
+    async def register(team_id: uuid.UUID) -> uuid.UUID:
+        values = {"team_id": team_id, "name": uuid.uuid4().hex, "hmac_key_id": "hk-1"}
+        async with sessions.begin() as session:
+            query = insert(Repository).values(**values).returning(Repository.id)
+            repository_id: uuid.UUID = (await session.execute(query)).scalar_one()
+        return repository_id
+
+    await assert_only_the_teams_repositories(SqlRepositoryAccess(sessions), register, teams)

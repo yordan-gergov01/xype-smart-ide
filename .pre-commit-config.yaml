@@ -82,6 +82,14 @@ repos:
   # mypy and import-linter run from server/.venv, ESLint and Prettier from node_modules.
   - repo: local
     hooks:
+      # The generated protobuf modules (server/gen/, not committed) that mypy and the
+      # tests import; regenerated whenever the contract or the generator changes.
+      - id: gen-proto
+        name: protobuf modules (server/gen)
+        entry: python tools/server_tool.py python -m devtools.gen_proto
+        language: unsupported
+        files: ^(proto/.*\.proto|server/devtools/gen_proto\.py|server/pyproject\.toml)$
+        pass_filenames: false
       - id: mypy
         name: mypy (server, strict)
         entry: python tools/server_tool.py mypy
