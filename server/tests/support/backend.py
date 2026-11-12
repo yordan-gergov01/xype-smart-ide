@@ -27,7 +27,7 @@ from support.auth import (
     FakeUserStore,
 )
 from support.keystore import FakeKeyStore
-from support.tls import ca_file
+from support.tls import ca_file, service_dir
 
 
 class FakeProbe:
@@ -77,6 +77,10 @@ def make_settings(**overrides: object) -> BackendSettings:
         "auth_signing_key_current": SIGNING_KEY,
         "auth_pepper_current": PEPPER,
         "kek_current": KEK,
+        # Loopback only: grpcio's native sockets are outside the network guard (ADR-0012).
+        "grpc_listen_address": "127.0.0.1:0",
+        "tls_cert_file": service_dir("backend") / "tls.crt",
+        "tls_key_file": service_dir("backend") / "tls.key",
     }
     values.update(overrides)
     return BackendSettings.model_validate(values)

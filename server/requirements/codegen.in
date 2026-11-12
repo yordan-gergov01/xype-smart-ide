@@ -1,0 +1,8 @@
+# Generates the protobuf message modules and their .pyi stubs from proto/ (ADR-0013):
+# locally, in CI and in the image's codegen stage; never in the runtime image. The
+# constraints keep protobuf and grpcio at the versions the backend runs.
+-c backend.txt
+
+# Compile: see server/README.md, "Adding or upgrading a dependency".
+
+grpcio-tools

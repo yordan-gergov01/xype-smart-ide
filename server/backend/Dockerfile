@@ -1,7 +1,9 @@
-# Build from server/: docker build -f backend/Dockerfile .
+# Build from server/ with the proto/ folder as a named context:
+#   docker build -f backend/Dockerfile --build-context proto=../proto .
 #
 # Stages:
 #   deps     virtual environment with the backend's pinned, hash-checked dependencies
+#   codegen  the protobuf modules from proto/ (devtools.gen_proto); only its output is kept
 #   runtime  the production image: common_lib, backend and the migrations, non-root;
 #            the migrate service runs `alembic upgrade head` from it
 #   test     adds the development dependencies and the tests; never shipped
@@ -24,14 +26,24 @@ COPY requirements/backend.txt /tmp/requirements/backend.txt
 RUN python -m venv /opt/venv \
     && pip install --require-hashes -r /tmp/requirements/backend.txt
 
+FROM deps AS codegen
+COPY requirements/codegen.txt /tmp/requirements/codegen.txt
+RUN pip install --require-hashes -r /tmp/requirements/codegen.txt
+COPY devtools/__init__.py devtools/gen_proto.py ./devtools/
+COPY --from=proto . /proto
+RUN python -m devtools.gen_proto --proto-dir /proto --out /gen
+
 FROM base AS runtime
 COPY --from=deps /opt/venv /opt/venv
+COPY --from=codegen /gen ./gen
+ENV PYTHONPATH=/app/gen
 COPY common_lib ./common_lib
 COPY backend ./backend
 COPY migrations ./migrations
 COPY alembic.ini ./
 USER 10001:10001
-EXPOSE 8000
+# 8000: REST (HTTPS); 50051: the gRPC Session stream (TLS), for the edge proxy only.
+EXPOSE 8000 50051
 HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-c", "import ssl, urllib.request; urllib.request.urlopen('https://127.0.0.1:8000/healthz', timeout=3, context=ssl.create_default_context(cafile='/certs/ca.crt'))"]
 # Uvicorn's access log is replaced by the backend's metadata-only access line. The
@@ -45,7 +57,8 @@ CMD ["uvicorn", "backend.main:create_app", "--factory", "--host", "0.0.0.0", "--
 FROM deps AS test
 COPY requirements/dev.txt /tmp/requirements/dev.txt
 RUN pip install --require-hashes -r /tmp/requirements/dev.txt
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app:/app/gen
+COPY --from=codegen /gen ./gen
 COPY pyproject.toml alembic.ini ./
 COPY common_lib ./common_lib
 COPY backend ./backend

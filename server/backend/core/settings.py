@@ -3,7 +3,7 @@
 Hosts have no defaults: where a dependency lives is deployment configuration.
 """
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, FilePath, SecretStr, field_validator, model_validator
 
 from common_lib.settings import KeyedSecret, PostgresSettings
 
@@ -64,6 +64,31 @@ class BackendSettings(PostgresSettings):
     session_keys_per_minute: int = Field(default=10, ge=1, le=1000)
     # Minting one more revokes the user's oldest key.
     session_keys_max_active: int = Field(default=8, ge=1, le=64)
+
+    # The gRPC Session stream (ADR-0013), served in the backend process with the
+    # backend's certificate (ADR-0036). `host:port`; the edge proxy forwards to it.
+    grpc_listen_address: str = Field(pattern=r"^[A-Za-z0-9.\-\[\]:]+:\d{1,5}$")
+    tls_cert_file: FilePath
+    tls_key_file: FilePath
+    # The client sends a heartbeat this often; silence for `stream_idle_timeout_s`
+    # closes the stream. Both stay below the edge proxy's 120 s gRPC timeouts.
+    stream_heartbeat_interval_s: int = Field(default=20, ge=1, le=60)
+    stream_idle_timeout_s: int = Field(default=60, ge=2, le=110)
+    stream_hello_timeout_s: int = Field(default=10, ge=1, le=60)
+    # TokenRefreshRequired goes out this long before the stream's access token expires.
+    stream_refresh_lead_s: int = Field(default=60, ge=1, le=300)
+    stream_max_repositories: int = Field(default=64, ge=1, le=1000)
+    # Open streams per backend process (each holds up to ~3 MiB of messages).
+    stream_max_concurrent: int = Field(default=32, ge=1, le=1000)
+    # Streams in flight get this long to finish after SIGTERM.
+    stream_shutdown_grace_s: float = Field(default=5.0, ge=0, le=10)
+
+    @model_validator(mode="after")
+    def _heartbeats_fit_the_idle_timeout(self) -> "BackendSettings":
+        # Two heartbeats may be late before the stream counts as silent.
+        if self.stream_idle_timeout_s < 2 * self.stream_heartbeat_interval_s:
+            raise ValueError("stream_idle_timeout_s must be at least twice the heartbeat interval")
+        return self
 
     @field_validator(
         "auth_signing_key_previous", "auth_pepper_previous", "kek_previous", mode="before"

@@ -39,6 +39,13 @@ python -m pip install --require-hashes -r requirements/dev.txt
 python -m pip install -e . --no-deps
 ```
 
+Generate the protobuf modules into `server/gen/` (not committed; mypy and the tests import
+them; pre-commit regenerates them when `proto/` changes):
+
+```bash
+python -m devtools.gen_proto
+```
+
 Create the local dev CA once from the repository root for the compose stack (ADR-0036;
 Git ignores `deploy/certs/`; the integration tests issue their own throwaway CA):
 

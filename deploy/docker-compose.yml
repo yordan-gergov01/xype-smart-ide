@@ -226,6 +226,9 @@ services:
       context: ../server
       dockerfile: backend/Dockerfile
       target: runtime
+      # The gRPC contract lives outside server/; the codegen stage reads it from here.
+      additional_contexts:
+        proto: ../proto
     image: xype-backend:dev
     user: "10001:10001"
     environment:
@@ -247,6 +250,10 @@ services:
       RABBITMQ_USER: ${RABBITMQ_BACKEND_USER:?RABBITMQ_BACKEND_USER must be set}
       RABBITMQ_PASSWORD: ${RABBITMQ_BACKEND_PASSWORD:?RABBITMQ_BACKEND_PASSWORD must be set}
       TLS_CA_FILE: /certs/ca.crt
+      # The gRPC Session stream (ADR-0013), TLS with the backend's own certificate.
+      GRPC_LISTEN_ADDRESS: 0.0.0.0:50051
+      TLS_CERT_FILE: /certs/tls.crt
+      TLS_KEY_FILE: /certs/tls.key
       # Auth (ADR-0014); generate each with `backend.admin_cli new-key` (local-dev runbook).
       AUTH_SIGNING_KEY_CURRENT: ${AUTH_SIGNING_KEY_CURRENT:?generate AUTH_SIGNING_KEY_CURRENT, see docs/runbooks/local-dev.md}
       AUTH_SIGNING_KEY_PREVIOUS: ${AUTH_SIGNING_KEY_PREVIOUS:-}
@@ -293,9 +300,10 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-    # Requests in flight get 10 s after SIGTERM (uvicorn --timeout-graceful-shutdown).
-    # Plus up to 5 s to flush the last spans, and a margin.
-    stop_grace_period: 20s
+    # Requests in flight get 10 s after SIGTERM (uvicorn --timeout-graceful-shutdown),
+    # Session streams up to 10 s (STREAM_SHUTDOWN_GRACE_S), the last spans up to 5 s, and a
+    # margin.
+    stop_grace_period: 30s
     mem_limit: 256m
 
   # The only service on a network with a published port; forwards to the backend.

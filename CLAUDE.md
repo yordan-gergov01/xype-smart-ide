@@ -30,6 +30,7 @@ Requirements: [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) · Plan: [docs/plan
 ```bash
 # Python 3.12 venv in server/.venv, setup in server/README.md (pip + hashed requirements)
 python tools/server_tool.py ruff check . && python tools/server_tool.py ruff format --check .
+python tools/server_tool.py python -m devtools.gen_proto   # protobuf modules into server/gen (not committed)
 python tools/server_tool.py mypy           # strict
 python tools/server_tool.py lint-imports   # layer contracts
 python tools/server_tool.py pytest         # unit; add -m integration for testcontainers

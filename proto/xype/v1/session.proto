@@ -66,6 +66,9 @@ message Hello {
   repeated string repository_ids = 3;
   string session_key_id = 4; // key negotiated via REST /api/v1/auth/session-key
   uint32 max_parallel_tools = 5;
+  // Merkle root hash (64 lowercase hex) per repository id, a subset of repository_ids;
+  // the server compares it with its own root to start a delta sync (ADR-0018).
+  map<string, string> repository_roots = 6;
 }
 
 message HelloAck {

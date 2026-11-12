@@ -1,11 +1,14 @@
 """The dev CA generator: layout, renewal, rotation and the limits it puts on the CA."""
 
+import ipaddress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 
 from devtools.dev_ca import (
     CA_DAYS,
@@ -50,7 +53,45 @@ def test_ca_may_issue_only_for_the_stack(tmp_path: Path) -> None:
     permitted = constraints.value.permitted_subtrees or []
     dns = {n.value for n in permitted if isinstance(n, x509.DNSName)}
     assert dns == {*SERVICES, "localhost"}
+    # No IP constraint: grpcio's TLS stack refuses any (ADR-0036).
+    assert not any(isinstance(n, x509.IPAddress) for n in permitted)
+    assert constraints.value.excluded_subtrees is None
     assert ca.extensions.get_extension_for_class(x509.BasicConstraints).value.path_length == 0
+
+
+def _old_ca_with_an_ip_constraint(out: Path) -> None:
+    """The CA earlier versions wrote: the same names plus 127.0.0.0/8."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "old dev CA")])
+    names: list[x509.GeneralName] = [x509.DNSName(s) for s in (*SERVICES, "localhost")]
+    names.append(x509.IPAddress(ipaddress.ip_network("127.0.0.0/8")))
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(NOW - timedelta(days=1))
+        .not_valid_after(NOW + timedelta(days=CA_DAYS))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .add_extension(x509.NameConstraints(names, None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "ca.crt").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    (out / "ca.key").write_bytes(pem)
+
+
+def test_refuses_an_older_ca_with_an_ip_constraint(tmp_path: Path) -> None:
+    _old_ca_with_an_ip_constraint(tmp_path)
+    with pytest.raises(DevCaError, match="rotate-ca"):
+        generate(tmp_path, now=NOW)
+    assert generate(tmp_path, rotate_ca=True, now=NOW) == list(SERVICES)
 
 
 def test_a_second_run_keeps_current_certificates(tmp_path: Path) -> None:

@@ -38,9 +38,9 @@ python tools/server_tool.py python -m devtools.dev_ca
 
 Every payload hop is TLS only, and the stack does not start without these files.
 
-If you created the CA before the key store existed (Phase 2 slice 5b), run it once with
-`--rotate-ca`: the CA's name constraints list every service, so it cannot issue for
-`keystore`.
+If you created the CA before Phase 2 slice 6a, run it once with `--rotate-ca`. An older CA
+either lacks `keystore` in its name constraints or has the IP constraint gRPC cannot
+verify (ADR-0036); the generator says which.
 
 Generate the keys once (auth: ADR-0014, KEK: ADR-0015) and paste each value into
 `deploy/env/.env`. The stack refuses to start while `AUTH_SIGNING_KEY_CURRENT`,
@@ -138,7 +138,8 @@ access tokens already issued expire within 15 minutes.
 `devtools.dev_ca` creates one CA (`deploy/certs/ca.crt`, key `ca.key`) and one
 certificate per TLS server: `edge`, `backend`, `postgres`, `redis`, `keystore`, `rabbitmq`. Each
 service mounts only its own directory at `/certs`, and the CA key is never mounted. The
-CA's name constraints let it issue only for these names, `localhost` and `127.0.0.0/8`.
+CA's name constraints let it issue only for these names and `localhost` (IP names are not
+constrained, because grpcio's TLS refuses an IP constraint; ADR-0036).
 On Windows, file modes do not protect the keys: keep the checkout under your user profile,
 or restrict the folder with `icacls deploy\certs /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F"`.
 

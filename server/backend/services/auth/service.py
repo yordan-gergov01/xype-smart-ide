@@ -149,8 +149,13 @@ class AuthService:
     async def authenticate(self, access_token: str) -> AccessClaims:
         """A verified access token, counted against its user's rate limit."""
         claims = self._issuer.verify(access_token)
-        await self._limit(f"user:{claims.principal.user_id}", self._policy.requests_per_minute)
+        await self.count(claims)
         return claims
+
+    async def count(self, claims: AccessClaims) -> None:
+        """Counts one more request of an authenticated user: a REST call or a stream
+        message share the same per-user limit (ADR-0014)."""
+        await self._limit(f"user:{claims.principal.user_id}", self._policy.requests_per_minute)
 
     async def _limit(self, key: str, limit: int, *, cost: int = 1, raise_: bool = True) -> None:
         decision = await self._deps.limiter.acquire(
