@@ -13,7 +13,7 @@ Written in Phase 0:
 | [0003](0003-fim-completion-model.md) | Local FIM completion model: qwen2.5-coder 1.5B on Ollama | Proposed | §1, §5 |
 | [0004](0004-rabbitmq-quorum-queues.md) | RabbitMQ 4.4 quorum queues with native priorities and delayed delivery | Accepted (deviation, approved) | §3.9 |
 | [0005](0005-paid-llm-openrouter.md) | Paid LLM access through OpenRouter (OpenAI-compatible adapter) | Accepted | §1, §5 |
-| [0006](0006-monorepo-layout.md) | Repository layout: XYPE templates for server and web clients | Accepted (deviation, approved) | §8 |
+| [0006](0006-monorepo-layout.md) | Repository layout: the server and web templates | Accepted (deviation, approved) | §8 |
 
 Written in Phase 1:
 
@@ -54,7 +54,7 @@ Planned (written in the phase that makes the decision):
 | 0026 | Prompt templates as versioned files; prefix-cache ordering | 4 |
 | 0027 | Agent tool protocol and approval rules (client-executed tools) | 5 |
 | 0028 | `CostScheduler`: peak/off-peak windows and override | 5 |
-| 0029 | Connectors: Jira and Company OS adapters | 6 |
+| 0029 | Connectors: Jira and project-context adapters | 6 |
 | 0030 | Eval gate: baselines, thresholds, compiler-as-a-judge | 7 |
 | 0031 | Code-OSS fork strategy (VSCodium-style, Open VSX, patch set) | 8 |
 | 0032 | Design tokens package and theme generation | 4 / 8 |

@@ -117,11 +117,11 @@ it over a private channel. The developer enters it in the extension, which keeps
 the OS keychain.
 
 ```bash
-docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -m backend.admin_cli create-team "XYPE Web"
+docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -m backend.admin_cli create-team "Web"
 ```
 
 ```bash
-docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -m backend.admin_cli create-client --team "XYPE Web" --email dev@example.com --name "Dev One"
+docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -m backend.admin_cli create-client --team "Web" --email dev@example.com --name "Dev One"
 ```
 
 `disable-client <client_id>` stops logins and refreshes and tells every replica, and

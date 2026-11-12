@@ -7,7 +7,7 @@
 
 ## 0. Who you are and what we are building
 
-You are a principal engineer building **XYPE IDE**, an AI-native IDE for our agency, XYPE (https://xype.io). It is a **fork of Code-OSS** with our own design. A built-in AI layer understands **only our codebases, our framework templates, our company context and our ways of working**.
+You are a principal engineer building **XYPE IDE**, an AI-native IDE. It is a **fork of Code-OSS** with its own design. A built-in AI layer understands **only the registered codebases, framework templates, project context and team conventions**.
 
 The architecture must follow **Chapter 3, "Case Study: Designing AI-Native IDEs"**, of *System Design for the LLM Era* (Sampriti Mitra, Packt). Every architectural decision from that chapter is listed in section 3 below. Implement each one, or record an ADR explaining a justified deviation.
 
@@ -17,7 +17,7 @@ The architecture must follow **Chapter 3, "Case Study: Designing AI-Native IDEs"
 - chat with the codebase;
 - get completions;
 - run background agent tasks;
-- start a new project from one of our framework templates.
+- start a new project from one of the registered framework templates.
 
 **Users and scale.** 5–6 developers, 10–15 repositories. Design and load-test for **10× headroom**: 60 users and 30 repositories.
 
@@ -52,7 +52,7 @@ The architecture must follow **Chapter 3, "Case Study: Designing AI-Native IDEs"
 | CI | GitHub Actions: lint, types, tests, `buf breaking`, image build, eval gate (free models only) |
 | Fine-tuning (experiment track) | Google Colab (free GPU tier), QLoRA, export to GGUF for Ollama or to safetensors for vLLM |
 
-Deployment target: **local only for now** (docker compose on my machine). Later it will be hosted in our own environment, so keep everything 12-factor and environment-driven, with no localhost assumptions in code.
+Deployment target: **local only for now** (docker compose on my machine). Later it will be hosted, so keep everything 12-factor and environment-driven, with no localhost assumptions in code.
 
 ---
 
@@ -64,7 +64,7 @@ Deployment target: **local only for now** (docker compose on my machine). Later 
 - Wiring happens in one **composition root** per process (API, gRPC server, worker), using simple constructor injection. No DI framework unless justified by an ADR.
 
 **Core interfaces (minimum):**
-`LLMProvider`, `Embedder`, `VectorStore`, `ChunkRepository`, `Cache`, `SemanticCache`, `TaskQueue`, `TaskHandler`, `ModelRouter`, `PromptRegistry`, `CryptoBox`, `SecretScrubber`, `MerkleIndex`, `ConnectorClient` (Company OS, Jira, templates), `ToolExecutor` (implemented on the client side), `Clock` and `CostScheduler` (peak/off-peak aware), `Metrics`.
+`LLMProvider`, `Embedder`, `VectorStore`, `ChunkRepository`, `Cache`, `SemanticCache`, `TaskQueue`, `TaskHandler`, `ModelRouter`, `PromptRegistry`, `CryptoBox`, `SecretScrubber`, `MerkleIndex`, `ConnectorClient` (project context, Jira, templates), `ToolExecutor` (implemented on the client side), `Clock` and `CostScheduler` (peak/off-peak aware), `Metrics`.
 
 **Every external dependency has three things:**
 1. a real adapter;
@@ -154,13 +154,13 @@ Deployment target: **local only for now** (docker compose on my machine). Later 
 
 **XYPE additions:**
 - Jira ticket workflow;
-- Company OS context;
+- project context (the project-context connector);
 - framework templates;
-- our rules and conventions injected into every prompt.
+- the shared and repo rules packs injected into every prompt.
 
 ### 3.2 Scale estimates
 
-Redo the book's estimation method for our scale in `docs/scale-estimates.md`. Starting assumptions, which you should verify and refine:
+Redo the book's estimation method for this project's scale in `docs/scale-estimates.md`. Starting assumptions, which you should verify and refine:
 
 - **Load.** 6 devs, using the book's 30 completion requests per dev per peak hour, gives about 0.05 RPS. With 10× headroom and a 2× safety margin, design for about **1–2 RPS** for completion. Chat is about 5 queries per dev per day (book), and agent tasks are about 20 per dev per day.
 - **Index.** 30 repos at up to about 10k chunks each is about 300k chunks. At 768-dim float32 that is about 0.9 GB of vectors plus HNSW overhead, which pgvector handles comfortably. Keep `VectorStore` behind its interface so that a turbopuffer adapter (the book's high-scale choice) can be added later without touching the core.
@@ -344,10 +344,10 @@ Write a test suite that verifies these guarantees, e.g.:
 
 Build an eval harness that runs only on free models (mock and local) during development:
 
-- **Datasets** come from **our own repos and templates**. Snapshot them, refresh them regularly, and add seeded repos with intentional gaps and edge cases. No client secrets.
+- **Datasets** come from **the registered repositories and templates**. Snapshot them, refresh them regularly, and add seeded repos with intentional gaps and edge cases. No real secrets.
 - **Code-complete evals:** remove functions and classes, type the signature, and compare the completion for exact match, AST match and test pass.
 - **Chat evals:** strip comments and docs, ask for explanations, and compare against the originals.
-- **Agentic evals:** real tasks (add docs, write tests, refactor, implement past Jira tickets). Check out the commit before the merged PR, run the agent, and score with our test suite and linters.
+- **Agentic evals:** real tasks (add docs, write tests, refactor, implement past Jira tickets). Check out the commit before the merged PR, run the agent, and score with the repository's test suite and linters.
 - **Mutation testing:** inject logic and syntax bugs and check whether the system finds and fixes them.
 - **Negative prompt testing:** risky requests (e.g. "Delete all database migrations") must be flagged, refused or clarified.
 - **CI eval gate** with versioned baselines and a regression threshold.
@@ -370,23 +370,23 @@ Build an eval harness that runs only on free models (mock and local) during deve
 
 ## 4. XYPE-specific capabilities
 
-1. **Templates as first-class context.** Our framework repos are registered as **templates**:
+1. **Templates as first-class context.** Framework repositories are registered as **templates**:
    - architecture, deploy, Grafana, FastAPI template, React+TS template, async queues, and others (paths: `[FILL IN]`).
 
    Requirements:
    - They are indexed like any other repo and always available to retrieval.
    - A "New project from template" wizard in the IDE scaffolds a new repo from one or more templates.
    - The agent prefers existing template patterns over inventing new ones. Encode this as a rule in the system prompt.
-2. **Rules and conventions.** A repo-level `.xype/rules.md` plus an org-level rules pack, injected as the **stable prefix** of every prompt (see section 5).
-3. **Company OS connector.** It reads project, client and team context from our internal Company OS app through a `ConnectorClient` adapter. The interface is `[FILL IN: REST API / MCP / DB — ask me in Phase 0]`. Until it is available, use a fake adapter with fixture data.
+2. **Rules and conventions.** A repo rules pack (`.xype/rules.md`) plus a shared rules pack, injected as the **stable prefix** of every prompt (see section 5).
+3. **Project-context connector.** It reads project and team context from the project-context system (an external project-management system, separate from Jira) through a `ConnectorClient` adapter. The interface is `[FILL IN: REST API / MCP / DB — ask me in Phase 0]`. Until it is available, use a fake adapter with fixture data.
 4. **Jira connector:**
    - list "my tickets";
    - open a ticket in the IDE;
-   - "Implement this ticket" starts an agent task with the ticket and the linked Company OS context;
+   - "Implement this ticket" starts an agent task with the ticket and the linked project context;
    - the agent posts its status back as a comment and transitions the ticket.
 
    Use a fake adapter in development, and use the official Jira REST API or MCP when enabled.
-5. **Scope.** Retrieval and agents work only on registered XYPE repos and templates. There is no general web search in v1.
+5. **Scope.** Retrieval and agents work only on registered repositories and templates. There is no general web search in v1.
 
 ---
 
@@ -413,7 +413,7 @@ Build an eval harness that runs only on free models (mock and local) during deve
 
   Peak hours are 01:00–04:00 and 06:00–10:00 UTC on weekdays.
 - **Cost levers built into the architecture:**
-  1. **Prefix-cache-friendly prompts.** The stable content (org rules, repo rules, template summaries, tool definitions) always comes first and stays byte-identical. Volatile content (query, retrieved chunks, cursor context) goes last. Track the provider cache-hit ratio as a metric.
+  1. **Prefix-cache-friendly prompts.** The stable content (shared rules pack, repo rules pack, template summaries, tool definitions) always comes first and stays byte-identical. Volatile content (query, retrieved chunks, cursor context) goes last. Track the provider cache-hit ratio as a metric.
   2. **`CostScheduler`.** Non-urgent agent and batch tasks (index-wide docs, bulk tests, eval runs on paid models) are deferred to off-peak windows. The user can override this with "run now".
   3. **Router budget awareness.** Per-user and per-project monthly budgets live in `user_preferences` and `cost_ledger`. When the budget is near its limit, the router degrades to cheaper models.
   4. **All caches from 3.8,** so the cheapest call is the one we skip.
@@ -424,7 +424,7 @@ Build an eval harness that runs only on free models (mock and local) during deve
 
 ## 6. IDE fork: design and UX
 
-- **Branding.** Name "XYPE IDE", plus our icons, splash/welcome screen and `product.json` (Open VSX, telemetry off).
+- **Branding.** Name "XYPE IDE", plus its own icons, splash/welcome screen and `product.json` (Open VSX, telemetry off).
 - **Design system.** Fetch https://xype.io and extract the real design tokens from its CSS:
   - colors (backgrounds, surfaces, text, accents, gradients, borders, states);
   - fonts, radius and spacing.
@@ -454,9 +454,9 @@ Build an eval harness that runs only on free models (mock and local) during deve
 
 This track is separate from the product. It must not block anything.
 
-- **Goal:** a small open-weight coder model, fine-tuned on our templates and code, that beats its base model on **our** completion evals and is cheap or free to serve locally.
+- **Goal:** a small open-weight coder model, fine-tuned on the registered templates and code, that beats its base model on **the project's** completion evals and is cheap or free to serve locally.
 - **Colab notebooks:**
-  - data preparation (FIM-formatted samples from our repos, deduplicated, secrets scrubbed, a held-out split by repo);
+  - data preparation (FIM-formatted samples from the registered repositories, deduplicated, secrets scrubbed, a held-out split by repo);
   - QLoRA training on a free Colab GPU;
   - evaluation with the same harness as `server/evals`;
   - export to GGUF for Ollama or to safetensors for vLLM.
@@ -485,7 +485,7 @@ xype-ide/
 │   ├── cache/                     # cache-aside, semantic cache, key normalization
 │   ├── tasks/                     # RabbitMQ TaskQueue, workers, priorities, DLQ, CostScheduler
 │   ├── agents/                    # agent loop, tool protocol (client-executed tools)
-│   ├── connectors/                # company_os, jira, templates (+ fakes)
+│   ├── connectors/                # project_context, jira, templates (+ fakes)
 │   ├── storage/                   # SQLAlchemy models, repositories, Alembic
 │   ├── security/                  # CryptoBox, key rotation, scrubbing checks
 │   ├── observability/             # logging, OTel, metrics, body-stripping middleware
@@ -524,7 +524,7 @@ Adjust the layout if you find a better one, but record why in an ADR.
   - the full proto draft;
   - the DB schema draft;
   - the interface list with signatures;
-  - a list of questions for me, including the Company OS interface and the template repo paths.
+  - a list of questions for me, including the project-context interface and the template repo paths.
 - ⛔ Stop.
 
 **Phase 1: Foundations.**
@@ -572,12 +572,12 @@ Adjust the layout if you find a better one, but record why in an ADR.
 **Phase 6: XYPE connectors.**
 - Templates registry and the "new project" wizard.
 - Rules packs.
-- Jira (fake first) and Company OS (fake first).
+- Jira (fake first) and the project-context connector (fake first).
 - The "Implement ticket" flow end to end on the mock model.
 - ⛔ Stop.
 
 **Phase 7: Evals and observability.**
-- The full eval harness on our repos with free models.
+- The full eval harness on the registered repositories with free models.
 - The CI eval gate.
 - Grafana dashboards and alerts.
 - Admin dashboard.
@@ -608,7 +608,7 @@ Adjust the layout if you find a better one, but record why in an ADR.
 
 - Work phase by phase. Keep a task list. Commit in small, logical commits (conventional commits).
 - Always verify library APIs against current docs. Never rely on memory for versions or config formats.
-- **Never call a paid API.** Never put real client code, secrets or data into fixtures, evals or the fine-tuning data without scrubbing.
+- **Never call a paid API.** Never put real (non-sample) code, secrets or data into fixtures, evals or the fine-tuning data without scrubbing.
 - Keep it simple. Prefer boring, well-known solutions. Every abstraction must earn its place, and interfaces stay small.
 - When a decision in this brief conflicts with reality (performance, a library limitation, Code-OSS build constraints), stop and propose an ADR instead of silently deviating.
 - At the end of each phase, report:
@@ -778,7 +778,7 @@ Then **stop and wait for my explicit confirmation.** Never commit, push, merge, 
 
 **Adopt from Matt Pocock's skills (`mattpocock/skills`).**
 - Check the current repo for the up-to-date skill names and the install method; names change between versions. At the time of writing, the install is `npx skills add mattpocock/skills`.
-- Copy or vendor the ones we use, adapt them to XYPE conventions, and record the source and version in each skill's header.
+- Copy or vendor the ones we use, adapt them to the project's conventions, and record the source and version in each skill's header.
 - Expected set:
   - **Grilling** (`grilling` / `grill-me` / `grill-with-docs`): clarify requirements one question at a time before big tasks.
   - **Specs and tickets** (`to-spec` / `to-prd` and `to-tickets` / `to-issues`): turn an idea or a Jira epic into a spec, then into small vertical-slice tickets.

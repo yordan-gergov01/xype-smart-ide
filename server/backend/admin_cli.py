@@ -1,9 +1,9 @@
 """Admin CLI for client credentials (ADR-0014, Q11): a composition root like
 `backend.main`, run inside the backend container.
 
-    docker compose ... exec backend python -m backend.admin_cli create-team "XYPE Web"
+    docker compose ... exec backend python -m backend.admin_cli create-team "Web"
     docker compose ... exec backend python -m backend.admin_cli create-client \\
-        --team "XYPE Web" --email dev@example.com --name "Dev One"
+        --team "Web" --email dev@example.com --name "Dev One"
     docker compose ... exec backend python -m backend.admin_cli disable-client xc_0123abcd...
     docker compose ... exec backend python -m backend.admin_cli rotate-secret xc_0123abcd...
     python tools/server_tool.py python -m backend.admin_cli new-key auth-2026-11

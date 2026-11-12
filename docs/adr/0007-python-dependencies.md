@@ -7,7 +7,7 @@
 
 ## Context and problem statement
 
-The server has several services (backend, LLM worker, later the indexer) that share `common_lib` but need different dependencies. Images must be reproducible, development happens on Windows while containers run Linux, and XYPE's template_core already solves this.
+The server has several services (backend, LLM worker, later the indexer) that share `common_lib` but need different dependencies. Images must be reproducible, development happens on Windows while containers run Linux, and the template_core template already solves this.
 
 ## Decision drivers
 

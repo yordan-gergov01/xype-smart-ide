@@ -24,7 +24,7 @@ on later changes. A privacy suite proves that no plaintext lands anywhere on the
   plaintext (`SecretBytes`) and publishes only vectors and obfuscated metadata. The
   backend writes them to pgvector; the worker has no Postgres access.
 - **Q2:** template repos are not ready. A **seeded sample repo** (`server/tests/fixtures/`,
-  no client code) stands in for "a real template repo" in the exit criterion.
+  no real code) stands in for "a real template repo" in the exit criterion.
 
 ## In scope (slices; each one is a commit after the owner's yes)
 

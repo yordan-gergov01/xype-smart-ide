@@ -1,6 +1,6 @@
 # XYPE server
 
-Backend (gateway), workers and the shared library, in the layout of XYPE's template_core
+Backend (gateway), workers and the shared library, in the layout of the template_core template
 (ADR-0006). The LLM worker has its provider seam; its process and the indexer arrive with
 later phases in `docs/plan.md`.
 

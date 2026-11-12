@@ -69,7 +69,7 @@ Chosen option: **1**.
 ### 3. A separate vector database now
 
 - Good: built for scale and filtering.
-- Bad: one more container on an 8 GB machine, and two stores to keep consistent. A hosted service also means code-derived data leaves our infrastructure, which needs its own privacy review.
+- Bad: one more container on an 8 GB machine, and two stores to keep consistent. A hosted service also means code-derived data leaves the self-hosted infrastructure, which needs its own privacy review.
 
 ## More information
 

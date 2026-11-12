@@ -1,6 +1,6 @@
 # XYPE IDE
 
-AI-native IDE for the XYPE agency: a Code-OSS fork (branding + UX only) plus the built-in `xype-ai` extension, backed by a Python server (FastAPI + gRPC + RabbitMQ workers, Postgres/pgvector, Redis). The AI layer works only on XYPE repos, templates, company context and conventions.
+XYPE IDE is an AI-native IDE: a Code-OSS fork (branding + UX only) plus the built-in `xype-ai` extension, backed by a Python server (FastAPI + gRPC + RabbitMQ workers, Postgres/pgvector, Redis). The AI layer works only on registered repositories, templates, project context and conventions.
 
 Requirements: [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) · Plan: [docs/plan.md](docs/plan.md) · ADRs: [docs/adr/](docs/adr/README.md) · Interfaces: [docs/interfaces.md](docs/interfaces.md) · Glossary: [docs/glossary.md](docs/glossary.md) · Traceability: [docs/traceability.md](docs/traceability.md)
 
@@ -44,7 +44,7 @@ Some commands become available as Phase 1 slices land; see `docs/plan.md`. Repo 
 
 ## Rules
 
-All files in `.claude/rules/` apply and override defaults. Structure follows the XYPE templates `template_core` and `template_web` (ADR-0006). Start with [00-workflow](.claude/rules/00-workflow.md) and [01-git](.claude/rules/01-git.md).
+All files in `.claude/rules/` apply and override defaults. Structure follows the templates `template_core` and `template_web` (ADR-0006). Start with [00-workflow](.claude/rules/00-workflow.md) and [01-git](.claude/rules/01-git.md).
 
 ## Definition of done
 

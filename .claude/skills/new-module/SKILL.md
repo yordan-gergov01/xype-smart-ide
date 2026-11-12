@@ -1,6 +1,6 @@
 ---
 name: new-module
-description: Scaffold a new XYPE server feature (a brief module such as retrieval, cache or router) in the template_core layout - service with Protocols, repository, transport, fakes, contract tests and import-linter contract - within size limits. Use when adding a module or a new external dependency seam.
+description: Scaffold a new server feature (a brief module such as retrieval, cache or router) in the template_core layout - service with Protocols, repository, transport, fakes, contract tests and import-linter contract - within size limits. Use when adding a module or a new external dependency seam.
 ---
 
 # New module (server feature)

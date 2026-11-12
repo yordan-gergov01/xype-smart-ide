@@ -10,4 +10,4 @@
 - Keep the IDE fork (`fork/`) limited to branding, UX simplification and bundling. All AI logic lives in `clients/xype-ai`.
 - Keep processes stateless (API, gRPC, workers); state lives in Postgres, Redis, RabbitMQ.
 - Do keep everything environment-driven (12-factor). Never hard-code `localhost`, ports or hostnames in code.
-- Retrieval and agents work only on registered XYPE repos and templates. No general web search in v1.
+- Retrieval and agents work only on registered repositories and templates. No general web search in v1.

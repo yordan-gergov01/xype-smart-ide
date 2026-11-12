@@ -70,16 +70,17 @@ class Project(Base):
     id: Mapped[uuid_pk]
     team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("teams.id"))
     name: Mapped[str]
-    company_os_ref: Mapped[str | None]
+    # The project's id in the project-context system (read by the project-context connector).
+    external_ref: Mapped[str | None]
     jira_project_key: Mapped[str | None]
     budget_usd_month: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     created_at: Mapped[created_at]
 
 
 class Repository(Base):
-    """A registered XYPE repository. Its name and remote URL are organisation
-    metadata, not code, and may be stored in clear. `remote_url` never holds
-    credentials: the registration API strips any userinfo (`https://token@host`)."""
+    """A registered repository. Its name and remote URL are metadata, not code, and
+    may be stored in clear. `remote_url` never holds credentials: the registration
+    API strips any userinfo (`https://token@host`)."""
 
     __tablename__ = "repositories"
     __table_args__ = (

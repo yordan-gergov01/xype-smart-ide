@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user; just synthesize what you already know.
 
-The issue tracker is GitHub Issues on `yordan-gergov01/xype-smart-ide` (use `gh`); triage labels use the canonical role names below. Client work tickets live in Jira (Jira connector, Phase 6).
+The issue tracker is GitHub Issues on `yordan-gergov01/xype-smart-ide` (use `gh`); triage labels use the canonical role names below. Project work tickets live in Jira (Jira connector, Phase 6).
 
 ## Process
 

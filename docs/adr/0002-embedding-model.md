@@ -46,7 +46,7 @@ Serving, behind the same `Embedder` interface:
 
 ### Confirmation
 
-Phase 2 benchmark: chunks/s on the dev machine, and recall@10 on a seeded retrieval set from our template repos; compare 1024 vs 768 dims. If CPU throughput < 5 chunks/s, revisit.
+Phase 2 benchmark: chunks/s on the dev machine, and recall@10 on a seeded retrieval set from the registered template repositories; compare 1024 vs 768 dims. If CPU throughput < 5 chunks/s, revisit.
 
 ## More information
 

@@ -12,7 +12,7 @@
 - Do run one shared contract-test suite against both the real adapter and its fake.
 - Do mark tests: unit (default, no I/O), `integration` (testcontainers: Postgres+pgvector, Redis, RabbitMQ), `e2e`, `load`.
 - Never let a test call a paid API or the internet. The network guard (`server/tests/support/network_guard.py`) fails any connection from the test process except to loopback and the Docker host.
-- Never put real client code, secrets or personal data in fixtures. Use seeded sample repos.
+- Never put real (non-sample) code, secrets or personal data in fixtures. Use seeded sample repos.
 - Coverage ≥ 85% on core modules; never lower a threshold to make CI pass.
 
 ## Bugs

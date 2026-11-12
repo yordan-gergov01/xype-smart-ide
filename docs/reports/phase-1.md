@@ -93,4 +93,4 @@ ADRs:
 1. Approve the Proposed ADRs: 0002, 0003, 0009, 0010, 0011, 0012, 0013, 0034, 0035.
 2. Q11 (blocks Phase 2): are client credentials created per developer by an admin? Is an SSO provider planned (Google Workspace, Entra ID)?
 3. Remove the old volume, `docker volume rm xype_postgres_data`; it predates the role split. Optionally also remove the volumes of the temporary projects `xype-s5` and `xype-s5b`.
-4. Later phases: Q1a (Company OS API, Phase 6), Q7 (Jira, Phase 6), Q13 (brand assets, Phase 4). All are in `docs/questions.md`.
+4. Later phases: Q1a (project-context API, Phase 6), Q7 (Jira, Phase 6), Q13 (brand assets, Phase 4). All are in `docs/questions.md`.
