@@ -39,6 +39,8 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Rejected chunk**: an uploaded chunk the server did not embed, reported in `IndexAck.rejected` with a fixed rejection reason; it counts as settled for the Merkle sync (ADR-0018, ADR-0019).
 
+**Merkle index**: the server's stored copy of a repository's Merkle tree (`merkle_nodes` and the root in `repositories`), changed only by a whole sync's `apply` with compare-and-set on the root.
+
 **Leaf node id**: the HMAC of a chunk's position (`chunk-pos`, ADR-0018), the Merkle leaf's id. It keys the stored chunk (`code_chunks.leaf_node_id`), so identical content in two places stays two rows, and it is part of the payload AAD.
 
 **Delta sync**: re-indexing only the chunks whose Merkle hashes differ between client and server.
