@@ -27,6 +27,7 @@ from support.auth import (
     FakeUserStore,
 )
 from support.keystore import FakeKeyStore
+from support.repositories import FakeRepositoryStore
 from support.tls import ca_file, service_dir
 
 
@@ -94,6 +95,7 @@ class FakeAuth:
     users: FakeUserStore = field(default_factory=FakeUserStore)
     limiter: FakeRateLimiter = field(default_factory=FakeRateLimiter)
     revocations: FakeRevocationPublisher = field(default_factory=FakeRevocationPublisher)
+    repositories: FakeRepositoryStore = field(default_factory=FakeRepositoryStore)
     clock: Clock = field(default_factory=SystemClock)
     tokens: FakeRefreshTokenStore = field(init=False)
     keys: FakeKeyStore = field(init=False)
@@ -111,6 +113,7 @@ class FakeAuth:
             limiter=self.limiter,
             revocations=self.revocations,
             keys=self.keys,
+            repository_keys=self.repositories,
         )
 
 

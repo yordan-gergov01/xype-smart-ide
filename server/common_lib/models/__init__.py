@@ -8,7 +8,14 @@ from common_lib.models.index import EMBEDDING_DIMENSION, ChunkEdge, CodeChunk, M
 from common_lib.models.llm import LlmModel, UserPreferences
 from common_lib.models.quality import CostLedgerEntry, EvalResult, EvalRun, Feedback
 from common_lib.models.tasks import AgentTask, TaskEvent
-from common_lib.models.tenancy import Project, RefreshToken, Repository, Team, User
+from common_lib.models.tenancy import (
+    Project,
+    RefreshToken,
+    Repository,
+    RepositoryKey,
+    Team,
+    User,
+)
 
 __all__ = [
     "EMBEDDING_DIMENSION",
@@ -27,6 +34,7 @@ __all__ = [
     "Project",
     "RefreshToken",
     "Repository",
+    "RepositoryKey",
     "TaskEvent",
     "Team",
     "User",

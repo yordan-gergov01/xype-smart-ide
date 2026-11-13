@@ -8,6 +8,7 @@ from sqlalchemy import CHAR, CheckConstraint, ForeignKey, Index, Numeric, Unique
 from sqlalchemy.orm import Mapped, mapped_column
 
 from common_lib.models.base import Base, created_at, hmac_checks, updated_at, uuid_pk
+from common_lib.remote_urls import REMOTE_URL_FORM, SCP_FORM
 
 
 class Team(Base):
@@ -79,17 +80,18 @@ class Project(Base):
 
 class Repository(Base):
     """A registered repository. Its name and remote URL are metadata, not code, and
-    may be stored in clear. `remote_url` never holds credentials: the registration
-    API strips any userinfo (`https://token@host`)."""
+    may be stored in clear. `remote_url` never holds credentials or a local path:
+    registration strips them, and a CHECK allows only the forms it produces."""
 
     __tablename__ = "repositories"
     __table_args__ = (
         UniqueConstraint("team_id", "name"),
         Index("idx_repositories_templates", "team_id", postgresql_where=text("is_template")),
         *hmac_checks("merkle_root_hash"),
-        # No userinfo (`https://user:token@host/...`) in the remote URL.
+        # Only the allowed forms: no userinfo, query, fragment or local path (ADR-0016).
         CheckConstraint(
-            r"remote_url !~ '^[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*@'", name="remote_url_no_credentials"
+            f"remote_url ~ '{REMOTE_URL_FORM}' OR remote_url ~ '{SCP_FORM}'",
+            name="remote_url_allowed_form",
         ),
     )
 
@@ -105,3 +107,31 @@ class Repository(Base):
     hmac_key_id: Mapped[str]
     last_synced_at: Mapped[datetime | None]
     created_at: Mapped[created_at]
+
+
+class RepositoryKey(Base):
+    """A repository's HMAC key (ADR-0016): random, created at registration, and stored
+    only as `nonce ‖ AES-256-GCM ‖ tag` under `KEK_repo`, with the AAD binding the
+    repository, the key id and the KEK id. At most one key per repository is active;
+    a retired key is kept until the re-index under its successor finishes."""
+
+    __tablename__ = "repository_keys"
+    __table_args__ = (
+        # A 32-byte key, a 12-byte nonce and a 16-byte tag.
+        CheckConstraint("octet_length(wrapped_key_enc) = 60", name="wrapped_key_length"),
+        Index(
+            "uq_repository_keys_active",
+            "repository_id",
+            unique=True,
+            postgresql_where=text("retired_at IS NULL"),
+        ),
+    )
+
+    repository_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("repositories.id", ondelete="CASCADE"), primary_key=True
+    )
+    hmac_key_id: Mapped[str] = mapped_column(primary_key=True)
+    kek_id: Mapped[str]
+    wrapped_key_enc: Mapped[bytes]
+    created_at: Mapped[created_at]
+    retired_at: Mapped[datetime | None]

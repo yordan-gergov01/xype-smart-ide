@@ -135,6 +135,21 @@ vectors["session_key_exchange"] = {
     .hex(),
 }
 
+REPO_ID = b"0192f0e8-7c1a-7b3e-8d2f-4a5b6c7d8e9f"
+HMAC_KEY_ID = b"0192f0e8-7c1a-7b3e-8d2f-000000000001"
+repo_key = bytes(range(0x90, 0xB0))
+repo_nonce = bytes(range(12, 24))
+repo_aad = fr(b"repo-hmac", REPO_ID, HMAC_KEY_ID)
+vectors["repository_key_wrap"] = {
+    "wrapping_key_hex": wrapping.hex(),
+    "repository_id": REPO_ID.decode(),
+    "hmac_key_id": HMAC_KEY_ID.decode(),
+    "repository_key_hex": repo_key.hex(),
+    "wrap_nonce_hex": repo_nonce.hex(),
+    "wrap_aad_hex": repo_aad.hex(),
+    "wrapped_key_hex": AESGCM(wrapping).encrypt(repo_nonce, repo_key, repo_aad).hex(),
+}
+
 Path(sys.argv[1]).write_bytes(
     (json.dumps({"version": 1, **vectors}, indent=2) + "\n").encode("utf-8")
 )

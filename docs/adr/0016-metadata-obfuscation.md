@@ -54,6 +54,13 @@ Chosen option: **1**.
 - A test that the session-key exchange returns keys only for requested, authorised repositories.
 - The privacy suite checks that no stored identifier equals an unkeyed SHA-256 of any sample-repo path.
 
+### Implementation notes (slice 7a)
+
+- **Table.** `repository_keys (repository_id, hmac_key_id, kek_id, wrapped_key_enc, created_at, retired_at)`, primary key `(repository_id, hmac_key_id)`, Alembic `0004`. `wrapped_key_enc` is `nonce(12) ‖ ciphertext ‖ tag(16)`: a CHECK holds it at 60 bytes, and the `_enc` suffix is the rule for every BYTEA column. A partial unique index allows one active key (`retired_at IS NULL`) per repository.
+- **Registration.** `RepositoryAdmin.register` (admin CLI `register-repo` now, the admin dashboard in Phase 7) makes the repository id and `hmac_key_id` (UUIDv7) first, wraps a fresh key under `KEK_repo` with AAD `frame("repo-hmac", repository_id, hmac_key_id, kek_id)`, wipes it, and writes both rows in one transaction. Only `https`, `ssh` and `git` URLs, rebuilt from the host and a numeric port (so any userinfo, query and fragment is dropped), and scp-like `[git@]host:path` are stored; any other scp user name is dropped, since it may be a token. Local paths, other schemes, non-ASCII and anything with `@` left after the rebuild are refused (`without_credentials`). `ssh://git@host` is stored without `git@`: the URL is metadata, not a clone address. The same patterns are a database CHECK (`common_lib.remote_urls`). Errors never repeat the URL.
+- **Exchange.** `/session-key` takes up to 64 `repository_ids`. One query on the primary returns the active keys of those that belong to the caller's team, so another team's id and an unknown one are left out the same way, and replica lag right after registration cannot look like "not yours". The keys are read before the session key is stored, so a failed read leaves no orphan key. Each is unwrapped, sealed for the client with AAD `frame("repo-hmac", repository_id, hmac_key_id)` (`seal_repository_key`, a shared vector) and wiped. A row that fails authentication fails the whole exchange.
+- **Not built yet.** Re-wrapping repository keys after a KEK rotation, and rotating a repository key. Until the re-wrap exists, `KEK_PREVIOUS` stays set after a KEK rotation (`docs/runbooks/key-rotation.md`).
+
 ## Pros and cons of the options
 
 ### 2. Plain SHA-256

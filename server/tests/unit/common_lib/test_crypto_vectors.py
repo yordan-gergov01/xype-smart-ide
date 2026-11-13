@@ -18,6 +18,7 @@ from common_lib.security import (
     direction_key,
     frame,
     hmac_id,
+    seal_repository_key,
     seal_session_key,
     server_exchange,
 )
@@ -87,6 +88,22 @@ def test_session_key_exchange() -> None:
         result.wrapping_key,
         case["key_id"],
         SecretBytes(unwrapped),
+        nonce=bytes.fromhex(case["wrap_nonce_hex"]),
+    )
+    assert sealed.hex() == case["wrap_nonce_hex"] + case["wrapped_key_hex"]
+
+
+def test_repository_key_wrap() -> None:
+    case = VECTORS["repository_key_wrap"]
+    assert (
+        frame("repo-hmac", case["repository_id"], case["hmac_key_id"]).hex()
+        == (case["wrap_aad_hex"])
+    )
+    sealed = seal_repository_key(
+        SecretBytes(bytes.fromhex(case["wrapping_key_hex"])),
+        case["repository_id"],
+        case["hmac_key_id"],
+        SecretBytes(bytes.fromhex(case["repository_key_hex"])),
         nonce=bytes.fromhex(case["wrap_nonce_hex"]),
     )
     assert sealed.hex() == case["wrap_nonce_hex"] + case["wrapped_key_hex"]

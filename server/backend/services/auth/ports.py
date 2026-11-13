@@ -2,7 +2,7 @@
 contract suites in tests/support (rule 03)."""
 
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Collection, Sequence
 from datetime import datetime
 from typing import Protocol
 
@@ -16,6 +16,7 @@ from common_lib.auth import (
     StoredCredentials,
     VerifiedCredential,
 )
+from common_lib.repositories import StoredRepositoryKey
 
 
 class CredentialVerifier(Protocol):
@@ -113,4 +114,13 @@ class RevocationSubscriber(Protocol):
 
     def revocations(self) -> AsyncIterator[Revocation]:
         """Revocations published from now on, until cancelled."""
+        ...
+
+
+class RepositoryKeySource(Protocol):
+    async def active_keys(
+        self, team_id: uuid.UUID, repository_ids: Collection[uuid.UUID]
+    ) -> Sequence[StoredRepositoryKey]:
+        """The active keys of those of `repository_ids` that belong to `team_id`; any
+        other id, unknown or another team's, is left out the same way."""
         ...

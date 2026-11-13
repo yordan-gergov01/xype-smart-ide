@@ -15,6 +15,7 @@ from backend.services.auth.ports import (
     CredentialVerifier,
     RateLimiter,
     RefreshTokenStore,
+    RepositoryKeySource,
     RevocationPublisher,
     UserStore,
 )
@@ -57,6 +58,7 @@ class AuthDependencies:
     limiter: RateLimiter
     revocations: RevocationPublisher
     keys: KeyStore
+    repository_keys: RepositoryKeySource
 
 
 class AuthService:

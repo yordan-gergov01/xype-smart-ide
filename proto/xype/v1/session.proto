@@ -113,7 +113,8 @@ message StreamError {
 //   POST /api/v1/auth/token            {client_id, client_secret} → {access_token, refresh_token, expires_in}
 //   POST /api/v1/auth/refresh          {refresh_token} → same as above
 //   GET  /api/v1/auth/me               Bearer → {user_id, team_id, role}
-//   POST /api/v1/auth/session-key      {client_public_key} → {key_id, server_public_key, wrapped_key, expires_at}
+//   POST /api/v1/auth/session-key      {client_public_key, repository_ids} →
+//     {key_id, server_public_key, wrapped_key, expires_at, repository_keys: [{repository_id, hmac_key_id, wrapped_key}]}
 //                                      (X25519, base64; wrapped_key = nonce ‖ ciphertext ‖ tag; ADR-0015)
 //   POST /api/v1/codebases/{id}/upload ChunkUpload → IndexAck
 //   GET  /api/v1/codebases/{id}/merkle-tree → MerkleTreeReport (server view)

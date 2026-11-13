@@ -152,18 +152,41 @@ def server_exchange(
         shared.wipe()
 
 
+def _seal(wrapping_key: SecretBytes, key: SecretBytes, aad: bytes, nonce: bytes | None) -> bytes:
+    nonce = nonce or os.urandom(_WRAP_NONCE_BYTES)
+    if len(nonce) != _WRAP_NONCE_BYTES:
+        raise InvalidValueError("a wrap nonce has 12 bytes")
+    return nonce + AESGCM(wrapping_key.reveal()).encrypt(nonce, key.reveal(), aad)
+
+
 def seal_session_key(
     wrapping_key: SecretBytes, key_id: str, session_key: SecretBytes, *, nonce: bytes | None = None
 ) -> bytes:
     """`nonce ‖ AES-256-GCM(wrapping_key, session_key, aad = "session" ‖ key_id)`, the
     `wrapped_key` the client unwraps (ADR-0015). `nonce` is for test vectors only."""
-    nonce = nonce or os.urandom(_WRAP_NONCE_BYTES)
-    if len(nonce) != _WRAP_NONCE_BYTES:
-        raise InvalidValueError("a wrap nonce has 12 bytes")
-    sealed = AESGCM(wrapping_key.reveal()).encrypt(
-        nonce, session_key.reveal(), frame("session", key_id)
+    return _seal(wrapping_key, session_key, frame("session", key_id), nonce)
+
+
+def seal_repository_key(
+    wrapping_key: SecretBytes,
+    repository_id: str,
+    hmac_key_id: str,
+    repository_key: SecretBytes,
+    *,
+    nonce: bytes | None = None,
+) -> bytes:
+    """`nonce ‖ AES-256-GCM(wrapping_key, repository_key, aad = "repo-hmac" ‖
+    repository_id ‖ hmac_key_id)`: a repository's HMAC key as the client receives it
+    with its session key (ADR-0015, ADR-0016). `nonce` is for test vectors only."""
+    return _seal(
+        wrapping_key, repository_key, frame("repo-hmac", repository_id, hmac_key_id), nonce
     )
-    return nonce + sealed
+
+
+def repository_key_aad(repository_id: str, hmac_key_id: str, kek_id: str) -> bytes:
+    """The AAD of a repository key wrapped under the KEK in Postgres (ADR-0016): a row
+    cannot be moved to another repository, key id or KEK unnoticed."""
+    return frame("repo-hmac", repository_id, hmac_key_id, kek_id)
 
 
 def new_key() -> SecretBytes:
