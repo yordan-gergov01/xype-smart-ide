@@ -55,7 +55,9 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Session key**: the AES-256 key, issued per session and user, that encrypts code between the client and the server (ADR-0015).
 
-**Repository key**: the per-repository HMAC key behind every obfuscated id of that repository (ADR-0016).
+**Repository key**: the per-repository HMAC key behind every obfuscated id of that repository (ADR-0016). Created at registration, stored in `repository_keys` wrapped under the KEK, and handed to the team's developers with their session key.
+
+**Registration**: an admin adds a repository to a team (`register-repo`); it creates the repository key and strips credentials from the remote URL.
 
 **KEK**: the server's key-encryption key; session and repository keys are stored only wrapped under it.
 _Avoid_: master key

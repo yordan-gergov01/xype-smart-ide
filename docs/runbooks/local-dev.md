@@ -124,6 +124,13 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec back
 docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -m backend.admin_cli create-client --team "Web" --email dev@example.com --name "Dev One"
 ```
 
+An admin registers each repository for a team. Registration creates the repository's
+HMAC key and strips any credentials from the remote URL; it prints only the id.
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file deploy/env/.env exec backend python -m backend.admin_cli register-repo --team "Web" --name sample-app --remote-url https://git.example.com/web/sample-app.git
+```
+
 `disable-client <client_id>` stops logins and refreshes and tells every replica, and
 `rotate-secret <client_id>` issues a new secret. Both revoke the user's refresh tokens;
 access tokens already issued expire within 15 minutes.

@@ -106,6 +106,9 @@ class FakeKeyStore:
         self._revoked_families[family_id] = self._remembered_until()
         self._entries = {k: e for k, e in self._entries.items() if e.record.family_id != family_id}
 
+    def key_ids(self) -> set[str]:
+        return set(self._entries)
+
     def holds(self, key_id: str) -> bytes | None:
         """The stored key bytes (tests compare them with what the client unwrapped)."""
         entry = self._live_or_none(key_id)

@@ -46,6 +46,17 @@ on later changes. A privacy suite proves that no plaintext lands anywhere on the
 
 Every slice that adds a message naming a repository adds a cross-team negative test.
 
+Slice 7 is cut in three (owner, 2026-11-13):
+- 7a: the `repository_keys` table (Alembic `0004`); repository registration in the admin CLI (`register-repo`, a `RepositoryAdmin` service the admin dashboard reuses in Phase 7) with key creation and userinfo stripped from `remote_url`; `/session-key` takes `repository_ids` and returns the requested, authorised repository keys wrapped for the client; a shared test vector for the client-side wrap.
+- 7b: `code_chunks.leaf_node_id`; the proto additions; `VectorRecord` keyed by leaf id; `VectorStore` (pgvector HNSW) with a fake and a contract suite.
+- 7c: `MerkleIndex` (DAL) with a fake and a contract suite; compare `Hello.repository_roots` with the server's roots and start the Merkle sync.
+
+Carried forward from slice 7a:
+- Before hosting (security): an admin command that re-wraps the repository keys stored under `KEK_PREVIOUS`, and repository-key rotation (retire, drop the index, re-index; update `repositories.hmac_key_id` and the active `repository_keys` row in one transaction), with `docs/runbooks/key-rotation.md`. Until then a KEK rotation is not complete.
+- Before hosting (least privilege): the app role may only `SELECT` and `INSERT` on `repository_keys` (or registration runs under a separate admin role).
+- A refactor commit: one public DAL transaction helper (`unit_of_work` in `backend/dal/auth/session.py`, the repository store's `_transaction`, `SqlRepositoryAccess`) with a conflict error the auth feature does not own.
+- A CLI test that runs `register-repo` end to end and checks that stdout and stderr never repeat a URL.
+
 Slice 6 is cut in two (owner, 2026-11-12):
 - 6a: code generation and `Hello.repository_roots`; the `grpc.aio` server with TLS and auth on open; Hello/HelloAck with key and repository checks; heartbeat, `TokenRefreshRequired` and the token-expiry close; rate limit and `StreamError`; edge `grpc_pass` with the per-IP open limit.
 - 6b (done): the revocation subscriber (`+subscribe` for `xype:auth:revoked` in the cache ACL) and a per-process stream registry that closes the matching streams; drain on shutdown beyond the grace period.
@@ -60,7 +71,7 @@ Carried forward from slice 6a:
 
 Carried forward from slice 5b:
 - Slice 6 (done in 6a: `check_key_age` on Hello and every message; the use-count limit moves to slice 8): call `check_key_age` (12 h) and the use-count limit on `Hello` and on each payload; the stream closes with `TokenRefreshRequired` or a fixed `StreamError` when the key is too old.
-- Slice 7: `/session-key` takes `repository_ids` and returns the wrapped repository keys (additive: the request model forbids unknown fields today).
+- Slice 7a (done): `/session-key` takes `repository_ids` and returns the wrapped repository keys (additive: the request model forbids unknown fields today).
 - Slice 8: the indexer's `keystore` ACL user (`-@all +get %R~xype:sk:*`), the indexer joins `keys`, and the compose test's `keys` members become `{keystore, backend, indexer}`; re-measure `keystore` memory.
 
 Carried forward from slice 3 (review):

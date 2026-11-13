@@ -7,12 +7,14 @@ from backend.services.auth.ports import (
     CredentialVerifier,
     RateLimiter,
     RefreshTokenStore,
+    RepositoryKeySource,
     RevocationPublisher,
     RevocationSubscriber,
     UserStore,
 )
 from backend.services.auth.service import AuthDependencies, AuthPolicy, AuthService
 from backend.services.auth.session_keys import (
+    IssuedRepositoryKey,
     MintedSessionKey,
     SessionKeyPolicy,
     SessionKeyService,
@@ -57,6 +59,7 @@ __all__ = [
     "CredentialVerifier",
     "InvalidCredentialsError",
     "InvalidTokenError",
+    "IssuedRepositoryKey",
     "MintedSessionKey",
     "NewClient",
     "NewRefreshToken",
@@ -68,6 +71,7 @@ __all__ = [
     "RateLimitedError",
     "RateLimiter",
     "RefreshTokenStore",
+    "RepositoryKeySource",
     "Reused",
     "Revocation",
     "RevocationPublisher",

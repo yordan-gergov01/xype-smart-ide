@@ -1,10 +1,12 @@
-"""`/api/v1/auth`: log in, refresh, who am I (ADR-0014) and session keys (ADR-0015).
+"""`/api/v1/auth`: log in, refresh, who am I (ADR-0014) and session keys with the
+requested repositories' HMAC keys (ADR-0015, ADR-0016).
 
 Bodies are validated here and never logged; secrets and tokens are `SecretStr`, so
 they cannot appear in a repr either.
 """
 
 import base64
+import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -24,6 +26,8 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 CLIENT_ID = r"^xc_[0-9a-f]{16}$"
 # A raw 32-byte X25519 public key, standard base64 with padding.
 PUBLIC_KEY = r"^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$"
+# The repositories one IDE window may open at once.
+MAX_REPOSITORIES_PER_KEY = 64
 
 
 class _Strict(BaseModel):
@@ -48,15 +52,29 @@ class TokenResponse(_Strict):
 
 class SessionKeyRequest(_Strict):
     client_public_key: str = Field(pattern=PUBLIC_KEY)
+    repository_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=MAX_REPOSITORIES_PER_KEY
+    )
+
+
+class RepositoryKeyResponse(_Strict):
+    """`wrapped_key` is `nonce(12) ‖ ciphertext ‖ tag(16)` under the exchange's wrapping
+    key, with AAD `"repo-hmac" ‖ repository_id ‖ hmac_key_id` (`seal_repository_key`)."""
+
+    repository_id: uuid.UUID
+    hmac_key_id: str
+    wrapped_key: str
 
 
 class SessionKeyResponse(_Strict):
-    """Bytes as standard base64; `wrapped_key` is `nonce(12) ‖ ciphertext ‖ tag(16)`."""
+    """Bytes as standard base64; `wrapped_key` is `nonce(12) ‖ ciphertext ‖ tag(16)`.
+    `repository_keys` holds one entry per requested repository the team may access."""
 
     key_id: str
     server_public_key: str
     wrapped_key: str
     expires_at: datetime
+    repository_keys: list[RepositoryKeyResponse]
 
 
 class MeResponse(_Strict):
@@ -119,12 +137,22 @@ async def session_key(
     claims: Annotated[AccessClaims, Depends(get_claims)],
     service: Annotated[SessionKeyService, Depends(get_session_key_service)],
 ) -> SessionKeyResponse:
-    """A new session key for one stream, wrapped for this client's ephemeral key."""
-    minted = await service.mint(claims, base64.b64decode(body.client_public_key, validate=True))
+    """A new session key for one stream, and the requested repositories' HMAC keys,
+    wrapped for this client's ephemeral key."""
+    client_key = base64.b64decode(body.client_public_key, validate=True)
+    minted = await service.mint(claims, client_key, body.repository_ids)
     response.headers.update(NO_STORE)
     return SessionKeyResponse(
         key_id=minted.key_id,
         server_public_key=_b64(minted.server_public_key),
         wrapped_key=_b64(minted.wrapped_key),
         expires_at=minted.expires_at,
+        repository_keys=[
+            RepositoryKeyResponse(
+                repository_id=key.repository_id,
+                hmac_key_id=key.hmac_key_id,
+                wrapped_key=_b64(key.wrapped_key),
+            )
+            for key in minted.repository_keys
+        ],
     )

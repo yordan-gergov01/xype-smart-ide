@@ -11,6 +11,7 @@ from backend.dal.auth import (
     SqlRefreshTokenStore,
     SqlUserStore,
 )
+from backend.dal.repositories import SqlRepositoryStore
 from backend.services.auth import (
     AccessTokenIssuer,
     AuthDependencies,
@@ -70,6 +71,7 @@ def auth_dependencies(
         limiter=RedisRateLimiter(redis),
         revocations=RedisRevocationPublisher(redis),
         keys=RedisKeyStore(keystore, kek_ring(settings)),
+        repository_keys=SqlRepositoryStore(database.write_sessions),
     )
 
 
@@ -95,7 +97,14 @@ def session_key_service(
         mints_per_minute=settings.session_keys_per_minute,
         max_active_per_user=settings.session_keys_max_active,
     )
-    return SessionKeyService(deps.keys, deps.limiter, policy=policy, clock=clock)
+    return SessionKeyService(
+        deps.keys,
+        deps.limiter,
+        deps.repository_keys,
+        kek_ring(settings),
+        policy=policy,
+        clock=clock,
+    )
 
 
 def client_admin(settings: BackendSettings, deps: AuthDependencies, clock: Clock) -> ClientAdmin:

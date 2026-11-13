@@ -1,12 +1,12 @@
-"""The auth and session adapters meet the shared contracts against Postgres (migrated, app
-role) and Redis (TLS, the backend's ACL user), as in deploy/docker-compose.yml (ADR-0013,
-ADR-0014)."""
+"""The auth, session and repository adapters meet the shared contracts against Postgres
+(migrated, app role) and Redis (TLS, the backend's ACL user), as in
+deploy/docker-compose.yml (ADR-0013, ADR-0014, ADR-0016)."""
 
 import asyncio
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import pytest
 from redis.asyncio import Redis
@@ -15,6 +15,7 @@ from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from support import containers
 from support.contracts import auth as contract
+from support.contracts import repositories as repository_contract
 from support.database import Database, alembic, postgres
 from support.session import assert_only_the_teams_repositories
 from support.tls import ca_file
@@ -27,11 +28,14 @@ from backend.dal.auth import (
     SqlRefreshTokenStore,
     SqlUserStore,
 )
+from backend.dal.repositories import SqlRepositoryStore
 from backend.dal.session import SqlRepositoryAccess
 from backend.services.auth import RateLimiter, RefreshTokenStore, UserStore
 from common_lib.auth import Reused, Revocation, Rotated
-from common_lib.models import RefreshToken, Repository, User
+from common_lib.errors import InvalidValueError
+from common_lib.models import RefreshToken, Repository, RepositoryKey, User
 from common_lib.models.connection import postgres_url
+from common_lib.security import WrappedKey
 from common_lib.tls import MINIMUM_TLS, client_context
 
 pytestmark = pytest.mark.integration
@@ -297,3 +301,46 @@ async def test_repository_access_contract(sessions: async_sessionmaker[AsyncSess
         return repository_id
 
     await assert_only_the_teams_repositories(SqlRepositoryAccess(sessions), register, teams)
+
+
+async def _two_teams(sessions: async_sessionmaker[AsyncSession]) -> tuple[uuid.UUID, uuid.UUID]:
+    users = SqlUserStore(sessions)
+    return (
+        await users.create_team(f"keys-{uuid.uuid4().hex[:8]}"),
+        await users.create_team(f"keys-{uuid.uuid4().hex[:8]}"),
+    )
+
+
+async def test_repository_store_meets_the_contract(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    store = SqlRepositoryStore(sessions)
+    await repository_contract.check_keys_round_trip_for_the_team_only(
+        store, await _two_teams(sessions)
+    )
+    await repository_contract.check_a_name_is_unique_per_team(store, await _two_teams(sessions))
+
+
+async def test_a_retired_key_is_not_issued_and_a_bad_wrap_is_refused(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    store = SqlRepositoryStore(sessions)
+    mine, _ = await _two_teams(sessions)
+
+    async def retire(repository_id: uuid.UUID) -> None:
+        async with sessions.begin() as session:
+            await session.execute(
+                update(RepositoryKey)
+                .where(RepositoryKey.repository_id == repository_id)
+                .values(retired_at=RepositoryKey.created_at)
+            )
+
+    await repository_contract.check_a_retired_key_is_not_issued(store, retire, mine)
+    short = repository_contract.new_repository(mine, "short")
+    wrapped = short.wrapped_key
+    bad = WrappedKey(wrapped.kek_id, wrapped.nonce, wrapped.ciphertext[:-1])
+    with pytest.raises(InvalidValueError):
+        await store.create(replace(short, wrapped_key=bad))
+    async with sessions() as session:
+        query = select(Repository.name).where(Repository.team_id == mine)
+        assert set((await session.execute(query)).scalars()) == {"kept", "retired"}

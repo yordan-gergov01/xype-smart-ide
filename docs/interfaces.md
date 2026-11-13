@@ -23,7 +23,8 @@ Conventions:
 | router | `ModelRouter` | `backend/services/router/` |
 | prompts | `PromptRegistry` | `backend/services/prompts/`; templates as files in `server/prompts/` |
 | security | `CryptoBox`, `SecretScrubber`, `KeyStore`, `hmac_id` | `common_lib/security/` (implemented; shared by the backend and the indexer), `KeyStore` adapter `common_lib/keystore/` (Redis only); client side in `clients/xype-ai` |
-| auth | `CredentialVerifier`, `UserStore`, `RefreshTokenStore`, `RateLimiter`, `RevocationPublisher`; values `Principal`, `Credential`, `AccessClaims`; `SessionKeyService` (`/session-key`, ADR-0015) | `backend/services/auth/` (seams), `backend/dal/auth/` (adapters), `common_lib/auth.py` (values and errors) |
+| auth | `CredentialVerifier`, `UserStore`, `RefreshTokenStore`, `RateLimiter`, `RevocationPublisher`; values `Principal`, `Credential`, `AccessClaims`; `SessionKeyService` (`/session-key`, ADR-0015), `RepositoryKeySource` | `backend/services/auth/` (seams), `backend/dal/auth/` (adapters), `common_lib/auth.py` (values and errors) |
+| repositories | `RepositoryStore`, `TeamDirectory`; `RepositoryAdmin` (registration, ADR-0016); values `NewRepository`, `StoredRepositoryKey` | `backend/services/repositories/` (seams), `backend/dal/repositories/` (adapter), `common_lib/repositories.py` (values) |
 | session | `RepositoryAccess`; `SessionGate` (open, Hello, per-message checks), `StreamTimers` | `backend/services/session/` (rules), `backend/dal/session/` (adapter), `backend/grpc/` (transport, ADR-0013) |
 | connectors | `ConnectorClient` | `backend/services/connectors/` (Protocols), adapters wired in `backend/main.py` |
 | observability | `Metrics` | `common_lib` (used by every service); added when services emit metrics; HTTP metrics live in the transport layer (ADR-0011) |

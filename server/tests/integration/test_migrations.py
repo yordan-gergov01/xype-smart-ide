@@ -114,28 +114,47 @@ def test_checks_reject_plaintext_ids_and_credentials_in_urls(database: Database)
     _alembic(database, ("upgrade", "head"))
     app = _url(database, ROLES["POSTGRES_APP_USER"], ROLES["POSTGRES_APP_PASSWORD"])
 
-    def insert(sql: str) -> Callable[[Connection], Any]:
+    def insert(sql: str, url: str | None = None) -> Callable[[Connection], Any]:
         def run(connection: Connection) -> Any:  # reason: any statement result
             team = connection.execute(
                 text("INSERT INTO teams (name) VALUES (gen_random_uuid()::text) RETURNING id")
             ).scalar_one()
-            return connection.execute(text(sql), {"t": team})
+            return connection.execute(text(sql), {"t": team, "u": url})
 
         return run
 
-    for sql in (
-        "INSERT INTO repositories (team_id, name, hmac_key_id, merkle_root_hash)"
-        " VALUES (:t, 'r', 'k', 'src/billing/invoice.py')",
+    with_url = (
         "INSERT INTO repositories (team_id, name, hmac_key_id, remote_url)"
-        " VALUES (:t, 'r', 'k', 'https://user:token@git.example.com/x.git')",
-    ):
+        " VALUES (:t, 'r', 'k', :u)"
+    )
+    refused = [
+        insert(
+            "INSERT INTO repositories (team_id, name, hmac_key_id, merkle_root_hash)"
+            " VALUES (:t, 'r', 'k', 'src/billing/invoice.py')"
+        ),
+        *(
+            insert(with_url, url)
+            for url in (
+                "https://user:token@git.example.com/x.git",
+                "https://u:p/ss@git.example.com/x",
+                "https://user:pa#ss@git.example.com/x",
+                "https://deploy:12345",
+                "https://git.example.com/x.git?private_token=t",
+                "tok@git.example.com/x.git",
+                "C:/Users/someone/x",
+                "../local/x.git",
+            )
+        ),
+    ]
+    for statement in refused:
         with pytest.raises(IntegrityError, match="violates check constraint"):
-            _with_connection(app, insert(sql))
+            _with_connection(app, statement)
     ok = (
         "INSERT INTO repositories (team_id, name, hmac_key_id, remote_url, merkle_root_hash)"
         " VALUES (:t, 'r', 'k', 'https://git.example.com/x.git', repeat('a', 64))"
     )
     _with_connection(app, insert(ok))
+    _with_connection(app, insert(with_url, "git@git.example.com:web/x.git"))
 
 
 def test_downgrade_and_upgrade_again(database: Database) -> None:
