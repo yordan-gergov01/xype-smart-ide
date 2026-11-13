@@ -65,6 +65,10 @@ These arrive in slice 6 (`Hello`) and slice 7 (index messages). They are additiv
 - `IndexAck.rejected`: chunk refs with a fixed reason code.
 - `ChunkRef.leaf_node_id`: the Merkle leaf's position id, the upsert and delete key of `code_chunks` (ADR-0020); carried in `ChunkUpload`, `index.chunks` and `index.vectors`.
 
+### Implementation notes (slice 7b)
+
+The contract changes above are in the proto: `MerkleRootReport` (a `SessionRequest` body, refused as not handled until slice 7c, after its repository check), `MerkleNode.parent_id`, `IndexAck.rejected` (`RejectedChunk` with a fixed `RejectionReason`) and `ChunkRef.leaf_node_id`. The leaf id is also bound into the payload AAD (ADR-0015, version 2).
+
 ### Consequences
 
 - Good: a one-file edit costs a few small messages. Renaming a directory re-sends only that subtree.

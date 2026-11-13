@@ -35,6 +35,12 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Merkle tree**: the hash tree over a repository's files and chunks used to find what changed.
 
+**Root report**: the client's `MerkleRootReport` after a debounced change; a different root starts a sync (ADR-0018).
+
+**Rejected chunk**: an uploaded chunk the server did not embed, reported in `IndexAck.rejected` with a fixed rejection reason; it counts as settled for the Merkle sync (ADR-0018, ADR-0019).
+
+**Leaf node id**: the HMAC of a chunk's position (`chunk-pos`, ADR-0018), the Merkle leaf's id. It keys the stored chunk (`code_chunks.leaf_node_id`), so identical content in two places stays two rows, and it is part of the payload AAD.
+
 **Delta sync**: re-indexing only the chunks whose Merkle hashes differ between client and server.
 
 **Selective fetch**: the server asking the client, over the open session stream, for the exact chunks it needs.

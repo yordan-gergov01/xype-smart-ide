@@ -80,9 +80,10 @@ context = {
     "chunk_hash": "c" * 64,
     "line_start": 10,
     "line_end": 20,
+    "leaf_node_id": "e" * 64,
 }
 aad = fr(
-    b"1",
+    b"2",
     *(
         str(context[k]).encode()
         for k in [
@@ -96,6 +97,7 @@ aad = fr(
             "chunk_hash",
             "line_start",
             "line_end",
+            "leaf_node_id",
         ]
     ),
 )

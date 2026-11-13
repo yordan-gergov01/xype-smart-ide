@@ -65,7 +65,9 @@ Every concatenation `a ‖ b ‖ …` in this ADR (HKDF `info`, wrap AADs, paylo
 
 The AAD is the framed encoding of these fields:
 
-`version ‖ direction ‖ key_id ‖ message_id ‖ request_id ‖ field_number ‖ repository_id ‖ obfuscated_file_id ‖ chunk_hash ‖ line_start ‖ line_end`
+`version ‖ direction ‖ key_id ‖ message_id ‖ request_id ‖ field_number ‖ repository_id ‖ obfuscated_file_id ‖ chunk_hash ‖ line_start ‖ line_end ‖ leaf_node_id`
+
+Version `2` (slice 7b) appends `leaf_node_id`, the Merkle leaf's position id and the key of the stored row (ADR-0020), so a ciphertext cannot be moved to another leaf either. No client used version `1`.
 
 Fields that a message has no use for are empty strings, and unused integer fields encode as `0`. Binding the `ChunkRef` stops a ciphertext from being moved to another chunk or repository. The receiver rebuilds the AAD from the plain fields and never trusts the `aad` bytes it was sent. The GCM tag, and therefore the AAD, can only be checked with the key, so the gateway checks the plain envelope fields and the indexer verifies the tag when it decrypts.
 

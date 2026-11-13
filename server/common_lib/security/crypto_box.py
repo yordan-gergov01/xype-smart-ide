@@ -11,12 +11,13 @@ from dataclasses import dataclass
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from common_lib.errors import InvalidValueError
 from common_lib.secret_bytes import SecretBytes
 from common_lib.security.errors import DecryptionError, NonceError
 from common_lib.security.framing import frame
 from common_lib.security.keys import Direction, direction_key
 
-AAD_VERSION = "1"
+AAD_VERSION = "2"
 # Far below GCM's 2^32 limit for random-looking nonces; the server enforces it.
 MAX_ENCRYPTIONS_PER_DIRECTION = 2**24
 _NONCE_PREFIX = bytes(4)
@@ -37,6 +38,12 @@ class PayloadContext:
     chunk_hash: str = ""
     line_start: int = 0
     line_end: int = 0
+    leaf_node_id: str = ""
+
+    def __post_init__(self) -> None:
+        if bool(self.chunk_hash) != bool(self.leaf_node_id):
+            # A chunk payload without its leaf id would silently lose the leaf binding.
+            raise InvalidValueError("a chunk context needs both chunk_hash and leaf_node_id")
 
     def aad(self) -> bytes:
         """The canonical AAD; the receiver rebuilds it, it never trusts sent bytes."""
@@ -52,6 +59,7 @@ class PayloadContext:
             self.chunk_hash,
             self.line_start,
             self.line_end,
+            self.leaf_node_id,
         )
 
 

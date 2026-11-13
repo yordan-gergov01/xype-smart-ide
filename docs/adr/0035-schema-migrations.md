@@ -33,6 +33,7 @@ Chosen option: **1**.
 - The backend has a write engine and a read engine (`DB_READ_HOST`, the primary when unset) with their session factories (brief §3.8).
 - Revision `0003` renames `projects.company_os_ref` to `projects.external_ref` (values kept): the project's id in the project-context system, read by the project-context connector.
 - Revision `0004` adds `repository_keys`, each repository's HMAC key wrapped under the KEK, and replaces the `remote_url` CHECK with one that allows only the forms registration stores (ADR-0016).
+- Revision `0005` adds `code_chunks.leaf_node_id` and keys chunks by `(repository_id, leaf_node_id)` (ADR-0020).
 
 ### Consequences
 

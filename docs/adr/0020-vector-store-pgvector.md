@@ -42,6 +42,14 @@ Chosen option: **1**.
 - **Writes.** Only the backend writes, through the write session (ADR-0035): the `index.vectors` consumer upserts and the Merkle sync deletes. Searches use the read session.
 - **Later.** A turbopuffer adapter would pass the same contract suite. Its selection is an ADR when it is needed (not before hosting).
 
+### Implementation notes (slice 7b)
+
+- **Key.** Alembic `0005` adds `code_chunks.leaf_node_id CHAR(64)` (HMAC hex CHECK) and replaces the unique `(repository_id, encrypted_chunk_hash, obfuscated_filename)` with `(repository_id, leaf_node_id)`. The table was empty; nothing wrote it before slice 8.
+- **Upsert.** `INSERT … ON CONFLICT (repository_id, leaf_node_id) DO UPDATE`, never delete-then-insert, so a row keeps its `id` (and `merkle_nodes.chunk_id` its link); `updated_at` is set explicitly. At most 256 records per call (`MAX_UPSERT`); a later duplicate leaf in one call wins.
+- **Search.** `search(vector, repository_ids, model, k, min_score)`: the model is a parameter, because rows match only the current embedding model. `SET LOCAL` takes no bind parameters, so the adapter calls `set_config('hnsw.ef_search', …, true)` and `set_config('hnsw.iterative_scan', 'relaxed_order', true)` in the search's transaction, then re-sorts. `k` is at most 100 (`MAX_K`). A vector must have 1024 finite numbers, not all zero (a zero vector has no cosine distance), checked in `VectorRecord` and in `search`.
+- **Recall test.** Against pgvector 0.8.7 with the planner forced onto the HNSW index: with `ef_search = 10` a plain scan keeps fewer than `k` rows of a small repository among a busy one's; the adapter's iterative scan returns all `k`. For a really small repository the planner rightly sorts its rows exactly instead.
+- **Not yet.** `VECTOR_EF_SEARCH` joins the settings when the store is wired (slice 8 writes, Phase 3 searches); the adapter's default is 100.
+
 ### Consequences
 
 - Good: no new service. Vectors and metadata stay consistent in one transaction.

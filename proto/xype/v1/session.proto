@@ -36,6 +36,7 @@ message SessionRequest {
     ToolResult tool_result = 60;
     MerkleTreeReport merkle_tree_report = 70;
     ChunkUpload chunk_upload = 71;
+    MerkleRootReport merkle_root_report = 72;
     Feedback feedback = 80;
   }
 }

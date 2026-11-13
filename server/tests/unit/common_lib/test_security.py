@@ -44,6 +44,7 @@ CONTEXT = PayloadContext(
     chunk_hash="c" * 64,
     line_start=10,
     line_end=20,
+    leaf_node_id="e" * 64,
 )
 
 
@@ -179,6 +180,7 @@ class TestCryptoBox:
         "change",
         [
             {"chunk_hash": "d" * 64},
+            {"leaf_node_id": "d" * 64},
             {"repository_id": "repo-2"},
             {"line_end": 21},
             {"message_id": "m-2"},
@@ -200,3 +202,10 @@ class TestCryptoBox:
         flipped = bytes([payload.ciphertext[0] ^ 1]) + payload.ciphertext[1:]
         with pytest.raises(DecryptionError):
             self.box.open(KEY, dataclasses.replace(payload, ciphertext=flipped), CONTEXT)
+
+
+def test_a_chunk_context_needs_its_leaf_id() -> None:
+    """Without the leaf id a chunk payload would silently lose its leaf binding."""
+    for change in ({"leaf_node_id": ""}, {"chunk_hash": ""}):
+        with pytest.raises(InvalidValueError):
+            dataclasses.replace(CONTEXT, **change)  # type: ignore[arg-type]

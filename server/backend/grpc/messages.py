@@ -13,7 +13,7 @@ from common_lib.domain import uuid7
 # Top-level repository ids, checked against those authorized at Hello. Nested
 # `ChunkRef`s join this when their message is handled (slices 7, 8); until then those
 # messages are refused as unsupported.
-_REPOSITORY_FIELDS = {"chunk_upload", "merkle_tree_report"}
+_REPOSITORY_FIELDS = {"chunk_upload", "merkle_root_report", "merkle_tree_report"}
 
 
 def kind(request: session_pb2.SessionRequest) -> str:

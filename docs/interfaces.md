@@ -53,6 +53,7 @@ class ChunkRef:
     line_start: int
     line_end: int
     chunk_hash: str
+    leaf_node_id: str        # the Merkle leaf's position id (ADR-0018, ADR-0020)
 
 @dataclass(frozen=True, slots=True)
 class ModelRef:
@@ -152,12 +153,17 @@ class SearchHit:
 
 class VectorStore(Protocol):
     """Adapters: pgvector (HNSW); turbopuffer later."""
-    async def upsert(self, records: Sequence[VectorRecord]) -> None: ...
+    async def upsert(self, repository_id: UUID, records: Sequence[VectorRecord]) -> None: ...
     async def delete(self, repository_id: UUID, leaf_node_ids: Sequence[str]) -> None: ...
     async def search(
-        self, vector: Sequence[float], *, repository_ids: Sequence[UUID], k: int,
-        min_score: float = 0.0,
+        self, vector: Sequence[float], *, repository_ids: Sequence[UUID], model: ModelRef,
+        k: int, min_score: float | None = None,
     ) -> Sequence[SearchHit]: ...
+```
+
+`VectorRecord` and `SearchHit` live in `common_lib/vectors.py` (shared with the indexer); `VectorStore` in `backend/services/retrieval/`, the pgvector adapter in `backend/dal/retrieval/` (slice 7b).
+
+```python
 
 class ChunkRepository(Protocol):
     """Metadata of chunks + call-graph edges (no code)."""

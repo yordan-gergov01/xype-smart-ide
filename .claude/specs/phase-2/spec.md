@@ -51,6 +51,11 @@ Slice 7 is cut in three (owner, 2026-11-13):
 - 7b: `code_chunks.leaf_node_id`; the proto additions; `VectorRecord` keyed by leaf id; `VectorStore` (pgvector HNSW) with a fake and a contract suite.
 - 7c: `MerkleIndex` (DAL) with a fake and a contract suite; compare `Hello.repository_roots` with the server's roots and start the Merkle sync.
 
+Carried forward from slice 7b:
+- Slice 8: the gateway refuses a `ChunkUpload` whose nested `ChunkRef.repository_id` differs from the authorised top-level id (`VectorStore.upsert` refuses it too), with a privacy test; the `index.vectors` consumer writes through `VectorStore`; `VECTOR_EF_SEARCH` joins the settings when the store is wired; `chunk_upload` handling extracts nested `ChunkRef` repository ids (with `leaf_node_id`) and binds `leaf_node_id` in each payload's AAD.
+- Slice 7c: handle `MerkleRootReport` (today refused as not handled after its repository check); validate `root_hash` and `MerkleNode.parent_id` as HMAC hex at the edge and never echo them.
+- Phase 3: retrieval calls `VectorStore.search` only with ids authorised for the principal (Hello or `RepositoryAccess`), never with ids from a request field, with a cross-team test.
+
 Carried forward from slice 7a:
 - Before hosting (security): an admin command that re-wraps the repository keys stored under `KEK_PREVIOUS`, and repository-key rotation (retire, drop the index, re-index; update `repositories.hmac_key_id` and the active `repository_keys` row in one transaction), with `docs/runbooks/key-rotation.md`. Until then a KEK rotation is not complete.
 - Before hosting (least privilege): the app role may only `SELECT` and `INSERT` on `repository_keys` (or registration runs under a separate admin role).

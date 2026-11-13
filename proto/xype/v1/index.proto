@@ -10,6 +10,13 @@ package xype.v1;
 
 import "xype/v1/common.proto";
 
+// Client reports its root after a debounced change (ADR-0018); the server descends if
+// it differs from its own.
+message MerkleRootReport {
+  string repository_id = 1;
+  string root_hash = 2; // 64-char lowercase hex, the client's root (ADR-0018)
+}
+
 // Server asks the client for its tree (10-min poll or after a mismatch).
 message MerkleSyncRequest {
   string request_id = 1;
@@ -30,6 +37,7 @@ message MerkleNode {
   string hash = 2; // HMAC of the chunk (leaf) or hash over the children's HMACs
   bool is_leaf = 3; // leaf = chunk
   LineRange lines = 4; // for leaves
+  string parent_id = 5; // node id of the requested node this child belongs to
 }
 
 // Server tells the client which leaves changed and must be uploaded.
@@ -53,4 +61,19 @@ message IndexAck {
   string request_id = 1;
   repeated string indexed_chunk_ids = 2;
   string server_root_hash = 3;
+  // Chunks the server did not embed. They count as settled, so the next sync does not
+  // upload them again (ADR-0018, ADR-0019).
+  repeated RejectedChunk rejected = 4;
+}
+
+message RejectedChunk {
+  ChunkRef chunk = 1;
+  RejectionReason reason = 2;
+}
+
+// Fixed reasons only: never a detail of what was found.
+enum RejectionReason {
+  REJECTION_REASON_UNSPECIFIED = 0;
+  REJECTION_REASON_SECRET_FOUND = 1; // the server's scrub re-check matched (ADR-0019)
+  REJECTION_REASON_TOO_LARGE = 2; // over 64 KiB after decryption
 }
