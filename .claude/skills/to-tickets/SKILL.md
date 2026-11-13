@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 Break a plan, spec, or conversation into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
-The issue tracker is GitHub Issues on `yordan-gergov01/xype-smart-ide` (use `gh`); triage labels use the canonical role names below. Client work tickets live in Jira (Jira connector, Phase 6).
+The issue tracker is GitHub Issues on `yordan-gergov01/xype-smart-ide` (use `gh`); triage labels use the canonical role names below. Project work tickets live in Jira (Jira connector, Phase 6).
 
 ## Process
 

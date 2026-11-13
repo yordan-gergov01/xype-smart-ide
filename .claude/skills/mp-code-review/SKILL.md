@@ -12,7 +12,7 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings. Start every sub-agent with a fresh context window.
 
-The issue tracker is GitHub Issues on `yordan-gergov01/xype-smart-ide` (use `gh`); triage labels use the canonical role names below. Client work tickets live in Jira (Jira connector, Phase 6).
+The issue tracker is GitHub Issues on `yordan-gergov01/xype-smart-ide` (use `gh`); triage labels use the canonical role names below. Project work tickets live in Jira (Jira connector, Phase 6).
 
 ## Process
 

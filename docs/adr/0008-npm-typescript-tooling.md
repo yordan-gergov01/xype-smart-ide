@@ -7,7 +7,7 @@
 
 ## Context and problem statement
 
-The repo holds the VS Code extension, two React apps and a design-token package. They need one install, shared lint and type settings, and import boundaries. XYPE's template_web uses npm with exact versions.
+The repo holds the VS Code extension, two React apps and a design-token package. They need one install, shared lint and type settings, and import boundaries. The template_web template uses npm with exact versions.
 
 ## Decision drivers
 

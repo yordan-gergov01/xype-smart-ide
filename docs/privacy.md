@@ -11,7 +11,7 @@ What the server may hold, what it never holds, and the limits of these guarantee
 | RabbitMQ | Ciphertext, `ChunkRef`s and vectors, in memory and in quorum-queue segments on disk | Keys in any form, plaintext |
 | `keystore` Redis | Session keys **wrapped** under the KEK, nonce counters, per-user key lists | Ciphertext, plaintext, tokens |
 | Shared Redis | Rate-limit counters by user id, revocation messages | Ciphertext, plaintext, keys, tokens |
-| Postgres | Vectors, HMAC ids, line ranges, chunk kinds, language ids, Merkle hashes; repository keys wrapped under the KEK; refresh tokens and client secrets as HMACs; organisation metadata in clear: `repositories.name`, `remote_url` (without userinfo), `projects.name`, user emails | Plaintext code, file names inside a repository, symbols, queries, answers, unwrapped keys |
+| Postgres | Vectors, HMAC ids, line ranges, chunk kinds, language ids, Merkle hashes; repository keys wrapped under the KEK; refresh tokens and client secrets as HMACs; team, project and repository metadata in clear: `repositories.name`, `remote_url` (without userinfo), `projects.name`, user emails | Plaintext code, file names inside a repository, symbols, queries, answers, unwrapped keys |
 | Logs, traces, metrics | Ids, sizes, latencies, counts, fixed error codes | Bodies, code, names, queries, answers, tokens |
 | Process memory (indexer, gateway) | Plaintext in `SecretBytes`, only while embedding or building a prompt | — |
 
@@ -29,7 +29,7 @@ Embedding-only storage is **not** a cryptographic guarantee. Research on embeddi
 
 - **Tree shape.** How many directories, files and chunks there are and how they nest, but not their names (ADR-0018).
 - **Sizes.** Each chunk's size, from the ciphertext length, and its line range.
-- **Fingerprints.** Tree shape, line ranges and sizes together can identify well-known code, such as vendored open-source files or XYPE templates.
+- **Fingerprints.** Tree shape, line ranges and sizes together can identify well-known code, such as vendored open-source files or the registered templates.
 - **Equality.** Two chunks with the same scrubbed content in one repository have the same hash (ADR-0016).
 - **Activity.** When and how much each developer changes, from sync timing and sizes.
 - **Missed secrets.** Whether a chunk held a secret that the client did not scrub, from the counter per rule (ADR-0019).

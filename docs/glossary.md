@@ -4,22 +4,27 @@ Domain language for XYPE IDE. Use these terms in code, specs, tickets and commit
 
 ## Product
 
-**XYPE IDE**: the agency's AI-native editor: a Code-OSS fork plus the `xype-ai` extension and its server.
+**XYPE IDE**: the AI-native editor: a Code-OSS fork plus the `xype-ai` extension and its server.
 _Avoid_: the app, the tool
 
 **Workspace**: the set of folders a developer has open in one IDE window.
 
-**Repository**: a registered XYPE git repository the AI may index and work on.
+**Repository**: a registered git repository the AI may index and work on.
 _Avoid_: project (means something else here), codebase (when one repo is meant)
 
-**Template**: a registered repository that holds an XYPE framework pattern (FastAPI, React+TS, deploy, …) used as reference and as the source of new projects.
+**Template**: a registered repository that holds a framework pattern (FastAPI, React+TS, deploy, …) used as reference and as the source of new projects.
 _Avoid_: boilerplate, starter
 
-**Project**: an XYPE client or internal engagement, as known in Company OS; owns repositories and budgets.
+**Project**: a unit of work that owns repositories and budgets; optionally linked to the project-context system by `projects.external_ref`.
+
+**Project-context system**: the external project-management system that holds project and team context; separate from Jira.
+
+**Project-context connector**: the `ProjectContextClient` interface (a `ConnectorClient`) and its adapters, which read project and team context from the project-context system.
 
 **Team**: a group of developers sharing caches, repositories and budgets.
 
-**Rules pack**: the org-level plus repo-level (`.xype/rules.md`) conventions injected into every prompt.
+**Rules pack**: a set of conventions injected as the stable prefix of every prompt. There are two: the **shared rules pack**, common to all registered repositories, and the **repo rules pack** (`.xype/rules.md`).
+_Avoid_: shared rules (means the scrub rules in `packages/scrub-rules/`)
 
 ## Context engine
 

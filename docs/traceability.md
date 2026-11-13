@@ -58,9 +58,9 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3, the XYP
 | T52 | Agent tools that touch code run on the client via `ToolExecutor`, with approval rules (3.5) | planned (5) | ADR-0027 (planned) | — |
 | T53 | Sequence diagrams for the five flows in `docs/` (3.5) | in progress (context awareness, Merkle sync) | ADR-0015, ADR-0018 | `docs/flows/context-awareness.md`, `docs/flows/merkle-sync.md` |
 | T54 | Templates as first-class context, "New project from template" wizard, prefer template patterns (4.1) | planned (6) | — | — |
-| T55 | Repo and org rules packs injected as the stable prompt prefix (4.2, 5) | planned (6) | ADR-0026 (planned) | — |
-| T56 | Company OS connector behind `ConnectorClient`, fake with fixtures until the API is shared (4.3) | planned (6) | ADR-0029 (planned) | — |
+| T55 | Repo and shared rules packs injected as the stable prompt prefix (4.2, 5) | planned (6) | ADR-0026 (planned) | — |
+| T56 | Project-context connector behind `ConnectorClient`, fake with fixtures until the API is shared (4.3) | planned (6) | ADR-0029 (planned) | — |
 | T57 | Jira connector: my tickets, open, "Implement this ticket", status comment and transition (4.4) | planned (6) | ADR-0029 (planned) | — |
-| T58 | Scope: only registered XYPE repos and templates, no web search in v1 (4.5) | planned (2, 6) | — | rule: `.claude/rules/03-architecture.md` |
+| T58 | Scope: only registered repositories and templates, no web search in v1 (4.5) | planned (2, 6) | — | rule: `.claude/rules/03-architecture.md` |
 | T59 | Chat messages persisted encrypted (3.5) | planned (4) | — | schema: `chat_messages` in `server/common_lib/models/chat.py` |
 | T60 | Scheduled jobs: index drift checks, eval runs, off-peak batches (3.4.5) | planned (5, 7) | ADR-0028 (planned) | — |

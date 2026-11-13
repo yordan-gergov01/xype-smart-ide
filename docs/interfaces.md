@@ -396,9 +396,9 @@ class JiraClient(ConnectorClient, Protocol):
     async def comment(self, key: str, body: str) -> None: ...
     async def transition(self, key: str, transition_name: str) -> None: ...
 
-class CompanyOSClient(ConnectorClient, Protocol):
+class ProjectContextClient(ConnectorClient, Protocol):
+    """Project and team context from the project-context system (separate from Jira)."""
     async def project_context(self, project_ref: str) -> "ProjectContext": ...
-    async def client_context(self, client_ref: str) -> "ClientContext": ...
     async def team_context(self, team_ref: str) -> "TeamContext": ...
 
 class TemplateRegistry(ConnectorClient, Protocol):
@@ -478,7 +478,7 @@ Client-side context-engine interfaces (TypeScript, Phase 2): `Chunker`, `CallGra
 | KeyStore | ✅ | security |
 | CredentialVerifier | ✅ | auth |
 | MerkleIndex | ✅ | indexing |
-| ConnectorClient (Company OS, Jira, templates) | ✅ | connectors |
+| ConnectorClient (project context, Jira, templates) | ✅ | connectors |
 | ToolExecutor | ✅ (TS) | clients/xype-ai |
 | Clock | ✅ | tasks (shared) |
 | CostScheduler | ✅ | tasks |

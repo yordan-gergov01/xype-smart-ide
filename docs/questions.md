@@ -6,7 +6,7 @@ Answers received on 2026-11-07 are recorded inline. Items under **Open** still n
 
 | # | Question | Answer | Consequence |
 |---|---|---|---|
-| Q1 | Company OS interface | **REST** (between the two systems) | `CompanyOSClient` gets an `httpx` REST adapter; fake with fixtures until the API spec is shared (Q1a). |
+| Q1 | Project-context interface | **REST** (between the two systems) | `ProjectContextClient` gets an `httpx` REST adapter; fake with fixtures until the API spec is shared (Q1a). |
 | Q2 | Template repo paths | **Not ready yet**, added later | Template registry and template evals use seeded sample repos until then; the template list stays config-driven. |
 | Q3 | `master` vs `main` | **`master`** | Rules, CI and release config use `master` as the default branch. |
 | Q5 | Local hardware | **CPU only, 8 GB RAM** | Local memory budget ≤ 4 GB for compose (scale-estimates §6); embedder served by Ollama locally; fork built on CI; 7B models out of scope locally. |
@@ -14,7 +14,7 @@ Answers received on 2026-11-07 are recorded inline. Items under **Open** still n
 | Q8 | ADR-0004 quorum queues | **Approved** | ADR-0004 accepted. |
 | Q14 | Currency | **USD everywhere** | Prices, cost ledger and budgets in USD (`budget_usd_month`); no FX conversion. |
 | Q15 | Extra task states | **Approved** | `DEFERRED` and `WAITING_FOR_CLIENT` stay in schema and proto. |
-| Q6a | Repo visibility | **Public** | Secrets hygiene is critical: secret scanning in pre-commit and CI from the first commit; no client code in fixtures. |
+| Q6a | Repo visibility | **Public** | Secrets hygiene is critical: secret scanning in pre-commit and CI from the first commit; no real (non-sample) code in fixtures. |
 | Q9 | Paid LLM route | **OpenRouter** (if possible) | ADR-0005 rewritten: one OpenAI-compatible adapter, OpenRouter profile with ZDR + provider allow-list. |
 | Q10 | Embedder dims | **1024** | First migration uses `vector(1024)`. |
 | Q11 | Auth model | **Admin creates client credentials per developer** (CLI first, admin dashboard in Phase 7); SSO later (2026-11-10) | Short-lived access + refresh tokens, OIDC-ready issuer seam (ADR-0014). |
@@ -25,6 +25,6 @@ Answers received on 2026-11-07 are recorded inline. Items under **Open** still n
 
 | # | Question | Why it matters | Blocking for |
 |---|---|---|---|
-| Q1a | Company OS REST API: base URL, auth (API key / OAuth client), and an OpenAPI spec or example responses for project, client and team? | Real adapter and contract fixtures. | Phase 6 |
+| Q1a | Project-context REST API: base URL, auth (API key / OAuth client), and an OpenAPI spec or example responses for project and team? | Real adapter and contract fixtures. | Phase 6 |
 | Q7 | Jira Cloud or Data Center? Project key(s) and transition names for "In progress" / "In review"? | Jira adapter and the "Implement ticket" flow. | Phase 6 |
 | Q13 | Brand assets: XYPE logo/icon files (SVG), or take them from xype.io? | Design tokens (Phase 4), branding (Phase 8). | Phase 4 |

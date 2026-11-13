@@ -25,7 +25,7 @@ Chosen option: **qwen2.5-coder 1.5B base**, through Ollama `/api/generate` with 
 
 ### Confirmation
 
-Phase 3 latency benchmark (P50/P99) and the completion eval (exact / AST match) on our repos.
+Phase 3 latency benchmark (P50/P99) and the completion eval (exact / AST match) on the registered repositories.
 
 ## More information
 

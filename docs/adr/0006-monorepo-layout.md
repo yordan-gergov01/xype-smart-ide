@@ -1,4 +1,4 @@
-# 0006 — Repository layout: XYPE templates for server and web clients
+# 0006 — Repository layout: the server and web templates
 
 - Status: Accepted (layout chosen by the project owner on 2026-11-07; deviates from brief §8)
 - Date: 2026-11-07
@@ -7,11 +7,11 @@
 
 ## Context and problem statement
 
-Brief §8 proposes one Python package per server module (`server/<module>/`, about 16 packages) plus composition roots in `server/apps/`. XYPE already has two project templates, `template_core` (Python services) and `template_web` (React + Vite), and the owner wants XYPE IDE to follow their structure so that every XYPE project looks the same. Phase 0 also left proto and schema drafts in `docs/drafts/` before `buf` and Alembic exist.
+Brief §8 proposes one Python package per server module (`server/<module>/`, about 16 packages) plus composition roots in `server/apps/`. Two project templates already exist, `template_core` (Python services) and `template_web` (React + Vite), and the owner wants XYPE IDE to follow their structure so that projects built on them look the same. Phase 0 also left proto and schema drafts in `docs/drafts/` before `buf` and Alembic exist.
 
 ## Decision drivers
 
-- One structure across XYPE projects: anyone who knows the templates can navigate this repo.
+- One structure across projects built on the templates: anyone who knows the templates can navigate this repo.
 - Layering checked by tools (import-linter, ESLint), not by review.
 - Small number of deployable units; no speculative packages.
 
@@ -22,7 +22,7 @@ Brief §8 proposes one Python package per server module (`server/<module>/`, abo
 
 ## Decision outcome
 
-Chosen option: **1**, because the owner chose it and it keeps XYPE projects uniform.
+Chosen option: **1**, because the owner chose it and it keeps the structure uniform with the templates.
 
 ### Server (`server/`, one Python project)
 
@@ -66,7 +66,7 @@ The Phase 0 drafts (`xype_v1.proto`, `schema.sql`) moved to `proto/xype/v1/` (AD
 
 ### Consequences
 
-- Good: same structure and checks as the XYPE templates; layering is enforced; fewer packaging files.
+- Good: same structure and checks as the templates; layering is enforced; fewer packaging files.
 - Good: the layering is stricter than the brief's per-package boundaries (api → services → dal).
 - Bad: module boundaries inside `backend/services/` are import-linter contracts, not package boundaries; a contract must be added with each feature.
 - Bad: `docs/interfaces.md`, rule 03 and the module map changed from the brief.
@@ -79,7 +79,7 @@ The Phase 0 drafts (`xype_v1.proto`, `schema.sql`) moved to `proto/xype/v1/` (AD
 
 ### template layout
 
-- Good: uniform with other XYPE projects; worked example of every layer in template_core.
+- Good: uniform with other projects built on the templates; worked example of every layer in template_core.
 - Bad: deviates from the brief's wording.
 
 ### One package per module

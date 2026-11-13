@@ -12,17 +12,17 @@ from common_lib.models import Base
 
 # column -> why its value is not code, a path, a symbol, a query or an answer.
 REVIEWED_TEXT_COLUMNS = {
-    "teams.name": "organisation metadata",
+    "teams.name": "metadata",
     "users.email": "account identity",
     "users.display_name": "account identity",
     "users.role": "enum (CHECK)",
     "users.client_id": "credential id, not the secret",
     "users.client_secret_hash": "peppered HMAC-SHA256 of a random secret (ADR-0014)",
-    "projects.name": "organisation metadata",
-    "projects.company_os_ref": "external id",
+    "projects.name": "metadata",
+    "projects.external_ref": "external id",
     "projects.jira_project_key": "external id",
-    "repositories.name": "organisation metadata (repo name, not a file)",
-    "repositories.remote_url": "organisation metadata; CHECK forbids credentials",
+    "repositories.name": "repository metadata (repo name, not a file)",
+    "repositories.remote_url": "repository metadata; CHECK forbids credentials",
     "repositories.template_kind": "fixed vocabulary",
     "repositories.hmac_key_id": "key id, not key material",
     "llm_models.id": "model id",

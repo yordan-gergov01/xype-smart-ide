@@ -39,15 +39,15 @@ Every phase ends at ⛔ with the report from brief §10. Exit criteria are in ad
 | Phase | Deliverable | Exit criteria |
 |---|---|---|
 | **0 Plan** | This document set | Reviewed and questions answered |
-| **1 Foundations** | `.claude/` (rules, skills, agents, hooks, settings), `CLAUDE.md`, commitlint, pre-commit; server and client layout from the XYPE templates (ADR-0006), pip + hashed requirements, npm workspaces; docker compose (pg16+pgvector, Redis, RabbitMQ 4.4, Ollama, OTel collector, Prometheus, Grafana; TEI hosted only, ADR-0002); config, logging, OTel, metrics; storage + Alembic baseline; LLM, embedder and clock seams with fakes and shared contracts (other interfaces with the phase that gives them a real adapter, `docs/interfaces.md`); mock LLM; local embedder adapter; CI with paid-API guard, size and duplication checks, import boundaries, `buf lint` | `docker compose up` healthy; CI green; network guard proven by a failing test; no file > 500 lines |
+| **1 Foundations** | `.claude/` (rules, skills, agents, hooks, settings), `CLAUDE.md`, commitlint, pre-commit; server and client layout from the templates (ADR-0006), pip + hashed requirements, npm workspaces; docker compose (pg16+pgvector, Redis, RabbitMQ 4.4, Ollama, OTel collector, Prometheus, Grafana; TEI hosted only, ADR-0002); config, logging, OTel, metrics; storage + Alembic baseline; LLM, embedder and clock seams with fakes and shared contracts (other interfaces with the phase that gives them a real adapter, `docs/interfaces.md`); mock LLM; local embedder adapter; CI with paid-API guard, size and duplication checks, import boundaries, `buf lint` | `docker compose up` healthy; CI green; network guard proven by a failing test; no file > 500 lines |
 | **2 Indexing & context** | `xype-ai` context engine (tree-sitter chunking for 7 languages, call graph, Merkle tree, AES-256-GCM, obfuscation, scrubber, idle-time worker); gRPC `Session` stream; auth + rate limiting; stateless embedding; pgvector index; Merkle delta sync; privacy test suite | Index a real template repo end to end; privacy suite proves no plaintext in Postgres, Redis, logs, traces |
 | **3 Completion** | Sync FIM path; completion + boilerplate caches; timeouts, capped retry, circuit breaker, race-to-response | Benchmark report with measured P50/P99 on local hardware vs 200 ms |
 | **4 Chat** | Scope selection, retrieval, selective client fetch, streaming, encrypted persistence, semantic cache, feedback, chat webview with design tokens | Chat TTFT measured; feedback stored; e2e test on mock LLM |
 | **5 Agents & queue** | Quorum queues, priorities, DLQ, delayed retries, `events`; agent loop with client-executed tools and approval rules; multi-file diffs; `CostScheduler` | Kill-a-worker test: task resumes; DLQ after 3 retries; approval gating test |
-| **6 Connectors** | Template registry + "New project" wizard; rules packs; Jira + Company OS fakes; "Implement ticket" flow | Ticket → agent → diff → Jira comment on mock model |
+| **6 Connectors** | Template registry + "New project" wizard; rules packs; Jira + project-context fakes; "Implement ticket" flow | Ticket → agent → diff → Jira comment on mock model |
 | **7 Evals & observability** | Eval harness (completion, chat, agentic, mutation, negative prompts), CI eval gate with baselines; Grafana dashboards + alerts; admin dashboard; k6/Locust at 10× | Gate fails on injected regression; load test report |
 | **8 Fork & branding** | Code-OSS fork via VSCodium-style scripts, `product.json` (Open VSX, telemetry off), themes from design tokens, XYPE home, bundled `xype-ai`, Windows installer | Installer runs on a clean Windows machine; patch set documented and rebaseable |
-| **9 Fine-tuning** | Colab notebooks, QLoRA, GGUF export, honest eval report | Base vs fine-tuned numbers on our completion evals |
+| **9 Fine-tuning** | Colab notebooks, QLoRA, GGUF export, honest eval report | Base vs fine-tuned numbers on the project's completion evals |
 | **10 Paid-model go-live** (DeepSeek V4 via OpenRouter) | Only after explicit approval: re-verify providers, prices and ZDR; choose the provider allow-list | Budget caps active; eval per provider; cost report incl. OpenRouter vs DeepSeek-direct off-peak comparison |
 
 Dependency notes:
@@ -90,12 +90,12 @@ Dependency notes:
 | R7 | CPU embedding throughput too low for the initial 300k-chunk index (~4 h estimate) | Low/Med | Resumable batch indexing; MRL to 768 dims; GPU host later |
 | R9 | Through OpenRouter, DeepSeek V4 is served by third-party hosts: prices above DeepSeek's own off-peak rate, no off-peak discount (weakens `CostScheduler` savings), possibly different checkpoints/quantizations, data-residency differences per host | Medium | ZDR on every request; provider allow-list reviewed in Phase 10; per-provider eval; keep the `deepseek` direct profile as a cost fallback (ADR-0005) |
 | R10 | Accidental paid API call during development | High (policy) | Network guard in tests, PreToolUse hook, CI check that fails on paid provider config |
-| R11 | Company OS is REST, but the API spec is not shared yet; template repos are not ready | Medium | Fakes with fixtures and seeded sample repos until available (Q1a, Q2) |
+| R11 | The project-context system is REST, but the API spec is not shared yet; template repos are not ready | Medium | Fakes with fixtures and seeded sample repos until available (Q1a, Q2) |
 
 ## 5. Assumptions
 
 - Local development on Windows 11 with Docker Desktop, CPU only, 8 GB RAM (Q5).
-- One tenant (XYPE) but `team_id` and `project_id` exist from day one for cache keys and budgets.
+- A single tenant, but `team_id` and `project_id` exist from day one for cache keys and budgets.
 - English for code, docs, commits; the agent chats with the user in Bulgarian.
 - `master` is the default branch (Q3). GitHub account `yordan-gergov01` (Q6).
-- Company OS is reached over REST (Q1); template repos come later (Q2).
+- The project-context system is reached over REST (Q1); template repos come later (Q2).
