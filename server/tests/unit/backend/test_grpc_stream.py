@@ -367,3 +367,22 @@ async def test_a_cancelled_stream_leaves_no_task_behind() -> None:
     (reason, count), *more = _closes(world).items()
     assert (count, more) == (1, [])
     assert reason in {"cancelled", "client_closed"}
+
+
+async def test_a_root_report_for_another_teams_repository_is_refused() -> None:
+    """`MerkleRootReport` (slice 7b) names a repository: it is checked like every other
+    message before it is refused as not handled yet (slice 7c)."""
+    async with stream_server() as world:
+        token, key_id, own = await _ready(world, "Mine")
+        _, _, foreign = await _ready(world, "Theirs")
+        async with world.stream(token) as call:
+            await call.write(hello(key_id, own))
+            await _read(call)
+            answers = []
+            for repository in (foreign, own):
+                report = index_pb2.MerkleRootReport(repository_id=str(repository))
+                await call.write(session_pb2.SessionRequest(merkle_root_report=report))
+                answers.append(await _read(call))
+    assert answers[0].error.message == "repository not accessible"
+    assert str(foreign) not in answers[0].SerializeToString().decode("latin-1")
+    assert answers[1].error.message != "repository not accessible"

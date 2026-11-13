@@ -8,17 +8,17 @@ from sqlalchemy import CHAR, CheckConstraint, ForeignKey, Index, UniqueConstrain
 from sqlalchemy.orm import Mapped, mapped_column
 
 from common_lib.models.base import Base, created_at, hmac_checks, hmac_hex, updated_at, uuid_pk
-
-# Qwen3-Embedding-0.6B (ADR-0002). Changing it needs a migration and a re-index.
-EMBEDDING_DIMENSION = 1024
+from common_lib.vectors import EMBEDDING_DIMENSION
 
 
 class CodeChunk(Base):
     __tablename__ = "code_chunks"
     __table_args__ = (
         CheckConstraint("line_end >= line_start", name="line_range"),
-        *hmac_checks("obfuscated_filename", "encrypted_chunk_hash"),
-        UniqueConstraint("repository_id", "encrypted_chunk_hash", "obfuscated_filename"),
+        *hmac_checks("obfuscated_filename", "encrypted_chunk_hash", "leaf_node_id"),
+        # One row per Merkle leaf: identical chunks stay separate rows, and a repeated
+        # delivery from the broker updates the same row (ADR-0020).
+        UniqueConstraint("repository_id", "leaf_node_id"),
         Index(
             "idx_code_chunks_embedding_hnsw",
             "vector_embedding",
@@ -37,6 +37,8 @@ class CodeChunk(Base):
     obfuscated_filename: Mapped[hmac_hex]
     # HMAC of the content (Merkle leaf).
     encrypted_chunk_hash: Mapped[hmac_hex]
+    # HMAC of the leaf's position (ADR-0018): the upsert and delete key.
+    leaf_node_id: Mapped[hmac_hex]
     line_start: Mapped[int]
     line_end: Mapped[int]
     # function | class | block — never a name.

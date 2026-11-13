@@ -46,11 +46,14 @@ class ChunkRef:
     line_start: int
     line_end: int
     chunk_hash: str
+    # The Merkle leaf's position id: the upsert and delete key of a stored chunk, so
+    # identical content in two places stays two rows (ADR-0018, ADR-0020).
+    leaf_node_id: str
 
     def __post_init__(self) -> None:
         if self.line_start < 1 or self.line_end < self.line_start:
             raise InvalidValueError(f"invalid line range {self.line_start}-{self.line_end}")
-        for name in ("obfuscated_file_id", "chunk_hash"):
+        for name in ("obfuscated_file_id", "chunk_hash", "leaf_node_id"):
             if not _HMAC_HEX.fullmatch(getattr(self, name)):
                 raise InvalidValueError(f"{name} must be a 64-char lowercase hex HMAC")
 

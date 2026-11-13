@@ -16,6 +16,7 @@ def chunk(**overrides: object) -> ChunkRef:
         "line_start": 1,
         "line_end": 10,
         "chunk_hash": "b" * 64,
+        "leaf_node_id": "c" * 64,
     }
     values.update(overrides)
     return ChunkRef(**values)  # type: ignore[arg-type]
@@ -34,6 +35,7 @@ def test_valid_chunk_ref_keeps_its_values() -> None:
         {"obfuscated_file_id": "src/app.py"},
         {"chunk_hash": "A" * 64},
         {"chunk_hash": "a" * 63},
+        {"leaf_node_id": "path/to/file.py#0"},
     ],
 )
 def test_chunk_ref_rejects_invalid_values(overrides: dict[str, object]) -> None:

@@ -28,7 +28,7 @@ message EncryptedPayload {
   bytes nonce = 2;
   bytes ciphertext = 3; // includes the 16-byte GCM tag
   // The framed AAD binding the payload to its place: direction, key_id, message_id,
-  // request id, field number and the ChunkRef (ADR-0015). Informational only: the
+  // request id, field number and the ChunkRef with its leaf id (ADR-0015). Informational only: the
   // receiver rebuilds the AAD from the plain fields and never trusts these bytes.
   bytes aad = 4;
 }
@@ -39,6 +39,9 @@ message ChunkRef {
   string obfuscated_file_id = 2; // hmac_id(repo_key, "file", path), framed, hex (ADR-0016)
   LineRange lines = 3;
   string chunk_hash = 4; // hmac_id(repo_key, "chunk-content", scrubbed text); Merkle leaf
+  // hmac_id(repo_key, "chunk-pos", ...): the Merkle leaf's position id (ADR-0018), the key
+  // of the stored chunk (ADR-0020) and part of the payload AAD (ADR-0015, version 2).
+  string leaf_node_id = 5;
 }
 
 message LineRange {
