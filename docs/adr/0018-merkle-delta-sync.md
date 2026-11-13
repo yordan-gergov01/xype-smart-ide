@@ -33,7 +33,8 @@ Chosen option: **1**.
   - A chunk with a symbol keeps its id when lines are inserted above it.
   - A chunk without a symbol (a block or line window) uses its ordinal in the file instead. Its id changes when a chunk is inserted before it, which costs a re-embed of the chunks that follow.
 - **Leaf hash.** `hmac_id(repo_key, "chunk-content", scrubbed_text)`.
-- **Inner hash.** SHA-256 over the children, sorted by `node_id`, each child serialised as `node_id ‖ hash ‖ is_leaf` (fixed 64 + 64 hex + 1 byte). The root hash is stored in `repositories.merkle_root_hash`.
+- **Inner hash.** SHA-256 over the children, sorted by `node_id`, each child serialised as `node_id ‖ hash ‖ is_leaf` (fixed 64 + 64 hex + 1 byte), and for a leaf child also `line_start ‖ line_end` (two 4-byte big-endian integers; amended in slice 7c, see below). The root hash is stored in `repositories.merkle_root_hash`.
+- **Top level.** The root has no node of its own: its hash is `repositories.merkle_root_hash`, and its children have no parent (`parent_id` NULL in `merkle_nodes`, the empty string on the wire, where an empty `node_ids` in a `MerkleSyncRequest` asks for them).
 
 ### Protocol
 
@@ -65,6 +66,19 @@ These arrive in slice 6 (`Hello`) and slice 7 (index messages). They are additiv
 - `IndexAck.rejected`: chunk refs with a fixed reason code.
 - `ChunkRef.leaf_node_id`: the Merkle leaf's position id, the upsert and delete key of `code_chunks` (ADR-0020); carried in `ChunkUpload`, `index.chunks` and `index.vectors`.
 
+### Amendment (slice 7c): leaf line ranges in the inner hash
+
+As first written, no hash covered a leaf's line range: the leaf hash is over the scrubbed content and a `chunk-pos` id has no line numbers. Inserting lines above a function then changed no hash, the roots stayed equal, no sync ran, and the stored range went stale, so this ADR's own confirmation case ("inserting lines above a function updates its stored range") could not pass. A leaf child's `line_start ‖ line_end` is therefore part of its parent's inner hash, not of the leaf hash: a moved chunk changes the hashes on its path, the sync finds it, and only its stored range is updated (no re-embed). Nothing computes inner hashes yet; the client (slice 9) and its shared test vectors follow this rule. The ADR stays Proposed until the owner approves it.
+
+### Implementation notes (slice 7c)
+
+- `MerkleIndex` (`backend/services/indexing/`, Postgres in `backend/dal/indexing/`, values in `common_lib/merkle.py`) is `root`, `children` and `apply`; the comparison is the sync's (slice 7d), so `diff` is not part of the store.
+- `apply(repository_id, expected_root, update)` is one transaction. It first moves the root by compare-and-set (`merkle_root_hash IS NOT DISTINCT FROM expected_root`); zero rows raise `MerkleConflictError` and nothing is written. The row lock also serialises two syncs of one repository from different streams.
+- The repository row is locked first, so an unknown repository (`InvalidValueError`) is told apart from a moved root (`MerkleConflictError`); the sync restarts only on the latter.
+- Deleted ids take their whole subtree (recursive CTE scoped to the repository, `UNION` so a cyclic parent graph still ends) and the chunks of its leaves, 1 000 ids per statement. After the writes, every stored node must be reachable from the root: an orphan (its parent deleted or never stored) or a cycle is refused and the whole apply rolls back, because no later sync would ever delete it and a leaf's chunk would stay searchable. One apply carries at most 500 000 nodes and as many deleted ids.
+- Nodes are upserted 1 000 per statement; a later duplicate wins. A leaf's line range is copied to its chunk (`code_chunks.leaf_node_id = node_id`) when it differs; a rejected leaf has no chunk and changes nothing. `merkle_nodes.chunk_id` stays unused: the link is the leaf id.
+- `children` takes at most 2 000 parents (`None` for the root's children) and returns them sorted by node id; an unknown parent has none.
+
 ### Implementation notes (slice 7b)
 
 The contract changes above are in the proto: `MerkleRootReport` (a `SessionRequest` body, refused as not handled until slice 7c, after its repository check), `MerkleNode.parent_id`, `IndexAck.rejected` (`RejectedChunk` with a fixed `RejectionReason`) and `ChunkRef.leaf_node_id`. The leaf id is also bound into the payload AAD (ADR-0015, version 2).
@@ -82,7 +96,7 @@ Unit tests with a fake `MerkleIndex`:
 - identical trees sync in one message;
 - one changed chunk gives exactly one upload;
 - a deleted file deletes its subtree;
-- inserting lines above a function updates its stored range and re-embeds nothing;
+- inserting lines above a function changes its parent's hash (amendment above), updates its stored range and re-embeds nothing;
 - a rejected chunk settles, and the next sync finds no difference;
 - a dropped page deletes nothing;
 - the number of round trips matches the tree depth.

@@ -176,24 +176,36 @@ class ChunkRepository(Protocol):
 
 ```python
 @dataclass(frozen=True, slots=True)
-class MerkleNodeView:
+class MerkleNodeView:          # common_lib/merkle.py
     node_id: str
     hash: str
     is_leaf: bool
 
 @dataclass(frozen=True, slots=True)
-class MerkleDiff:
-    changed_leaves: Sequence[ChunkRef]
-    deleted_node_ids: Sequence[str]
+class MerkleNodeUpdate:
+    node_id: str
+    parent_id: str | None      # None: a child of the root
+    hash: str
+    is_leaf: bool
+    lines: tuple[int, int] | None = None   # leaves only
+
+@dataclass(frozen=True, slots=True)
+class MerkleUpdate:
+    new_root: str
+    nodes: Sequence[MerkleNodeUpdate]
+    deleted: Sequence[str] = ()  # their subtrees and chunks go too
 
 class MerkleIndex(Protocol):
+    """Postgres in backend/dal/indexing (slice 7c). The level-by-level comparison is the
+    sync's (slice 7d)."""
     async def root(self, repository_id: UUID) -> str | None: ...
-    async def children(self, repository_id: UUID, node_ids: Sequence[str]) -> Sequence[MerkleNodeView]: ...
-    async def diff(
-        self, repository_id: UUID, client_children: Mapping[str, Sequence[MerkleNodeView]],
-    ) -> MerkleDiff:
-        """Top-down comparison, O(log n) per changed leaf."""
-    async def apply(self, repository_id: UUID, new_root: str, nodes: Sequence[MerkleNodeView]) -> None: ...
+    async def children(
+        self, repository_id: UUID, parent_ids: Collection[str | None],
+    ) -> Mapping[str | None, Sequence[MerkleNodeView]]: ...
+    async def apply(
+        self, repository_id: UUID, expected_root: str | None, update: MerkleUpdate,
+    ) -> None:
+        """Compare-and-set on the root; raises MerkleConflictError when it moved."""
 ```
 
 ## cache

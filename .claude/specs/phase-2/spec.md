@@ -49,11 +49,20 @@ Every slice that adds a message naming a repository adds a cross-team negative t
 Slice 7 is cut in three (owner, 2026-11-13):
 - 7a: the `repository_keys` table (Alembic `0004`); repository registration in the admin CLI (`register-repo`, a `RepositoryAdmin` service the admin dashboard reuses in Phase 7) with key creation and userinfo stripped from `remote_url`; `/session-key` takes `repository_ids` and returns the requested, authorised repository keys wrapped for the client; a shared test vector for the client-side wrap.
 - 7b: `code_chunks.leaf_node_id`; the proto additions; `VectorRecord` keyed by leaf id; `VectorStore` (pgvector HNSW) with a fake and a contract suite.
-- 7c: `MerkleIndex` (DAL) with a fake and a contract suite; compare `Hello.repository_roots` with the server's roots and start the Merkle sync.
+- 7c: `MerkleIndex` (DAL) with a fake and a contract suite (owner, 2026-11-13: 7c is cut in two).
+- 7d: the sync engine and its stream wiring: several responses per message, compare `Hello.repository_roots` with the server's roots and start the Merkle sync, `MerkleRootReport`, `MerkleTreeReport` with paging, `MerkleDelta`, a sync deadline, and the server's 10-minute poll (owner, 2026-11-13).
+
+Carried forward from slice 7c:
+- Slice 7d: `MerkleTreeReport` needs a way to mark its last page (ADR-0018 deletes wait for it); the sync applies through `MerkleIndex.apply` with the root it read and restarts on `MerkleConflictError`.
+- Slice 9: the client's inner hash includes each leaf child's line range (ADR-0018 amendment), with shared vectors.
+- Slice 8: a vector delivered after the apply that deleted its leaf must not be stored: the `index.vectors` consumer writes only chunks whose leaf exists in `merkle_nodes`, ordered against `apply` by the repository row lock, with a test (delete the subtree, deliver the late vector, find nothing).
+- Slice 7d: the sync may also recompute inner hashes and the root from the stored children and refuse an inconsistent report; a dropped page deletes nothing (required test).
+- Slice 7d or the load tests: measure `MerkleIndex.apply` on a large sample tree; its whole-tree reachability check runs under the repository row lock on every sync. If it is too slow, check only the touched nodes (walk up from each stored node's parent). Give `apply` a `statement_timeout` and `lock_timeout` (`set_config(..., true)`) so a huge apply cannot hold the repository lock indefinitely. The sync also refuses a node whose parent is a leaf.
+- A migration drops the unused `merkle_nodes.chunk_id` (the link is `leaf_node_id`).
 
 Carried forward from slice 7b:
 - Slice 8: the gateway refuses a `ChunkUpload` whose nested `ChunkRef.repository_id` differs from the authorised top-level id (`VectorStore.upsert` refuses it too), with a privacy test; the `index.vectors` consumer writes through `VectorStore`; `VECTOR_EF_SEARCH` joins the settings when the store is wired; `chunk_upload` handling extracts nested `ChunkRef` repository ids (with `leaf_node_id`) and binds `leaf_node_id` in each payload's AAD.
-- Slice 7c: handle `MerkleRootReport` (today refused as not handled after its repository check); validate `root_hash` and `MerkleNode.parent_id` as HMAC hex at the edge and never echo them.
+- Slice 7d: handle `MerkleRootReport` (today refused as not handled after its repository check); validate `root_hash` and `MerkleNode.parent_id` as HMAC hex at the edge and never echo them.
 - Phase 3: retrieval calls `VectorStore.search` only with ids authorised for the principal (Hello or `RepositoryAccess`), never with ids from a request field, with a cross-team test.
 
 Carried forward from slice 7a:
@@ -71,7 +80,7 @@ Carried forward from slice 6a:
 - Slice 6b (done): a stream whose session key was revoked or evicted after Hello stops at once: the revocation subscriber closes it, and a message checks that the key still exists (today it is caught at the first payload's `advance_nonce`, slice 8).
 - Slice 11: on `session key unknown, expired or not yours` the extension mints one new key and reconnects once; if that fails again it stops and tells the user (more windows than the 8-key cap). On `CODE_UNAVAILABLE` it reconnects with backoff.
 - Slice 8 (first payload): the per-direction use-count limit (2^24) next to the key-age check on every payload.
-- Slice 7: compare `Hello.repository_roots` with the server's roots and start the Merkle sync.
+- Slice 7d: compare `Hello.repository_roots` with the server's roots and start the Merkle sync.
 - Slice 11: the extension's client sends heartbeats every `heartbeat_interval_s` and reconnects on `TokenRefreshRequired`, a `StreamError` or a close.
 
 Carried forward from slice 5b:
