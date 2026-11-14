@@ -41,6 +41,10 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Merkle index**: the server's stored copy of a repository's Merkle tree (`merkle_nodes` and the root in `repositories`), changed only by a whole sync's `apply` with compare-and-set on the root.
 
+**Dead letter**: a queue message no handler could process, copied to its queue's `.dlq` with a fixed reason (`x-xype-reason`) and kept at most 24 hours (ADR-0015).
+
+**Retry queue**: a delay queue (`index.<q>.retry.<n>`) where a failed message waits about 1, 2 or 4 minutes before it returns to its queue (ADR-0004).
+
 **Leaf node id**: the HMAC of a chunk's position (`chunk-pos`, ADR-0018), the Merkle leaf's id. It keys the stored chunk (`code_chunks.leaf_node_id`), so identical content in two places stays two rows, and it is part of the payload AAD.
 
 **Delta sync**: re-indexing only the chunks whose Merkle hashes differ between client and server.

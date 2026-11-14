@@ -45,6 +45,10 @@ Chosen option: **1**.
 
 Phase 5 integration tests (testcontainers RabbitMQ 4.4): priority ordering, retry delays, DLQ after 3 failures, kill-a-worker redelivery.
 
+### Implementation notes (Phase 2 slice 8a)
+
+The index queues (ADR-0015) come first and follow this ADR's retry plan through option 3's mechanism: a failed message is republished to a delay queue (TTL about 1, 2 and 4 minutes, then dead-lettered back to its queue) with an attempt header, and dead-lettered after three retries; the consumer never sleeps. No jitter yet: one consumer per queue retries in arrival order (jitter joins the task queues in Phase 5). The quorum queue's `x-delivery-limit` does not count an explicit `basic.nack` with requeue in RabbitMQ 4, so it only catches consumers that die mid-message. The exchanges and queues are declared by the broker's definitions, not by the services.
+
 ## More information
 
 - https://www.rabbitmq.com/docs/priority
