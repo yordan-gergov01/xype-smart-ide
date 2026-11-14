@@ -3,6 +3,13 @@ only: the rules live in `backend.services.session`."""
 
 from backend.grpc.metrics import StreamMetrics
 from backend.grpc.server import METHOD, SERVICE, create_grpc_server
-from backend.grpc.stream import SessionStream
+from backend.grpc.stream import SessionStream, SyncFactory
 
-__all__ = ["METHOD", "SERVICE", "SessionStream", "StreamMetrics", "create_grpc_server"]
+__all__ = [
+    "METHOD",
+    "SERVICE",
+    "SessionStream",
+    "StreamMetrics",
+    "SyncFactory",
+    "create_grpc_server",
+]

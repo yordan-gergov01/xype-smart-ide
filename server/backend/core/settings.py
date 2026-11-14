@@ -82,6 +82,14 @@ class BackendSettings(PostgresSettings):
     stream_max_concurrent: int = Field(default=32, ge=1, le=1000)
     # Streams in flight get this long to finish after SIGTERM.
     stream_shutdown_grace_s: float = Field(default=5.0, ge=0, le=10)
+    # Merkle sync (ADR-0018): the server asks for every root this often after Hello; a
+    # sync is forgotten after its deadline; a sync that lost the race to another one
+    # starts over at most this often.
+    merkle_poll_interval_s: int = Field(default=600, ge=30, le=3600)
+    merkle_sync_deadline_s: int = Field(default=600, ge=30, le=3600)
+    merkle_sync_max_restarts: int = Field(default=3, ge=0, le=10)
+    # Nodes all syncs of one process may hold at once (a few hundred bytes each).
+    merkle_sync_max_held_nodes: int = Field(default=1_000_000, ge=1000, le=5_000_000)
 
     @model_validator(mode="after")
     def _heartbeats_fit_the_idle_timeout(self) -> "BackendSettings":

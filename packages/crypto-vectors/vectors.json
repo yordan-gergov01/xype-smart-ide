@@ -90,5 +90,39 @@
     "wrap_nonce_hex": "0c0d0e0f1011121314151617",
     "wrap_aad_hex": "000000097265706f2d686d61630000002430313932663065382d376331612d376233652d386432662d3461356236633764386539660000002430313932663065382d376331612d376233652d386432662d303030303030303030303031",
     "wrapped_key_hex": "38634292471c68a6ed7dd3bb0a35c26f2a1797d9e6cf2dbf430124e410fcee5f913b7d295e600759716244e72b064328"
-  }
+  },
+  "merkle_inner_hash": [
+    {
+      "children": [],
+      "hash_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "children": [
+        {
+          "node_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "is_leaf": true,
+          "lines": [12, 30]
+        },
+        {
+          "node_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "is_leaf": true,
+          "lines": [1, 10]
+        }
+      ],
+      "hash_hex": "dfa478101427e765b2a8ab62a9e64e326a5985c0ce7c6605b8968db861ebfec8"
+    },
+    {
+      "children": [
+        {
+          "node_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "hash": "dfa478101427e765b2a8ab62a9e64e326a5985c0ce7c6605b8968db861ebfec8",
+          "is_leaf": false,
+          "lines": null
+        }
+      ],
+      "hash_hex": "37327f02ad35f3d4eed19168e88673694093a8ed70f013adcd165458682460b8"
+    }
+  ]
 }

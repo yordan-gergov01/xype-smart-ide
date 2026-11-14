@@ -17,6 +17,7 @@ from support.streams import Call, ShiftedClock, StreamWorld, heartbeat, hello, s
 from support.tls import ca_file
 from xype.v1 import common_pb2, feedback_pb2, index_pb2, session_pb2
 
+from backend.core.session import sync_factory
 from backend.grpc import SessionStream, StreamMetrics
 from backend.main import create_app
 from common_lib.auth import RateLimitedError
@@ -29,7 +30,7 @@ async def _ready(
 ) -> tuple[str, str, uuid.UUID]:
     """A token, a session key and one repository of the team."""
     token, claims = await world.login(await world.client(team), issued_by=issued_by)
-    repository = world.repositories.register(world.team_of(claims))
+    repository = world.repository(world.team_of(claims))
     return token, await world.session_key(claims), repository
 
 
@@ -326,6 +327,7 @@ async def test_a_failed_read_ends_the_stream_and_logs_only_the_type(
         stream = SessionStream(
             world.gate,  # type: ignore[arg-type]  # reason: set by stream_server
             world.streams,
+            syncs=sync_factory(world.settings, world.merkle, world.clock),
             clock=world.clock,
             metrics=StreamMetrics(CollectorRegistry()),
             tracer=TracerProvider().get_tracer("test"),

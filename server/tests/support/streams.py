@@ -20,7 +20,7 @@ from prometheus_client import CollectorRegistry
 from xype.v1 import session_pb2
 
 from backend.core.auth import auth_service, client_admin, session_key_service
-from backend.core.session import session_gate
+from backend.core.session import session_gate, sync_factory
 from backend.core.settings import BackendSettings
 from backend.grpc import METHOD, SERVICE, SessionStream, StreamMetrics, create_grpc_server
 from backend.services.session import SessionGate, StreamRegistry, listen_for_revocations
@@ -28,6 +28,7 @@ from common_lib.auth import AccessClaims, Credential, NewClient
 from common_lib.clock import Clock
 from common_lib.secret_bytes import SecretBytes
 from support.backend import FakeAuth, make_settings
+from support.merkle import FakeMerkleIndex
 from support.session import FakeRepositoryAccess
 from support.tls import ca_file
 
@@ -50,6 +51,7 @@ class StreamWorld:
     clock: Clock
     auth: FakeAuth
     repositories: FakeRepositoryAccess = field(default_factory=FakeRepositoryAccess)
+    merkle: FakeMerkleIndex = field(default_factory=FakeMerkleIndex)
     registry: CollectorRegistry = field(default_factory=CollectorRegistry)
     port: int = 0
     gate: SessionGate | None = None
@@ -82,6 +84,12 @@ class StreamWorld:
 
     def team_of(self, claims: AccessClaims) -> uuid.UUID:
         return claims.principal.team_id
+
+    def repository(self, team_id: uuid.UUID) -> uuid.UUID:
+        """A repository registered for the team, never synced."""
+        repository_id = self.repositories.register(team_id)
+        self.merkle.register(repository_id)
+        return repository_id
 
     @asynccontextmanager
     async def stream(self, token: str | None) -> AsyncIterator[Call]:
@@ -119,7 +127,10 @@ async def stream_server(
     )
     tracer = TracerProvider().get_tracer("test")
     metrics = StreamMetrics(world.registry)
-    handler = SessionStream(gate, world.streams, clock=clock, metrics=metrics, tracer=tracer)
+    syncs = sync_factory(settings, world.merkle, clock)
+    handler = SessionStream(
+        gate, world.streams, syncs=syncs, clock=clock, metrics=metrics, tracer=tracer
+    )
     server, world.port = create_grpc_server(settings, handler)
     # Revocations published by the fakes reach this server's streams, as over Redis.
     subscriber = world.auth.revocations.subscriber()

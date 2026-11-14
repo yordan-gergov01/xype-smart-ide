@@ -1,5 +1,6 @@
 """The `Session` stream's own timers (ADR-0013), on a fixed clock: no sleeping."""
 
+import dataclasses
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -14,6 +15,7 @@ POLICY = StreamPolicy(
     refresh_lead_s=60,
     max_repositories=64,
     requests_per_minute=200,
+    merkle_poll_interval_s=3600,  # out of the way of the other timers' tests
 )
 
 
@@ -65,3 +67,18 @@ def test_a_token_close_to_expiry_gets_the_notice_at_once() -> None:
     clock = timers(expires_in=timedelta(seconds=30))
     assert clock.due(at(0)) is Due.REFRESH
     assert clock.due(at(1)) is None
+
+
+def test_the_poll_comes_once_per_interval_after_hello() -> None:
+    policy = dataclasses.replace(POLICY, merkle_poll_interval_s=600)
+    clock = StreamTimers(policy, opened_at=OPENED, token_expires_at=OPENED + timedelta(hours=1))
+    assert clock.due(at(5)) is None  # no poll before Hello
+    clock.seen(at(5), hello=True)
+    for second in range(20, 600, 20):
+        clock.seen(at(second))
+    assert clock.next_check(at(590)) == 15  # the poll is due at 605
+    clock.seen(at(600))
+    assert clock.due(at(605)) is Due.POLL
+    assert clock.due(at(605)) is None  # once
+    clock.seen(at(620))
+    assert clock.next_check(at(620)) == 60  # the idle deadline comes before the next poll

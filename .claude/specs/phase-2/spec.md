@@ -52,17 +52,25 @@ Slice 7 is cut in three (owner, 2026-11-13):
 - 7c: `MerkleIndex` (DAL) with a fake and a contract suite (owner, 2026-11-13: 7c is cut in two).
 - 7d: the sync engine and its stream wiring: several responses per message, compare `Hello.repository_roots` with the server's roots and start the Merkle sync, `MerkleRootReport`, `MerkleTreeReport` with paging, `MerkleDelta`, a sync deadline, and the server's 10-minute poll (owner, 2026-11-13).
 
+Carried forward from slice 7d:
+- Slice 8: the `ChunkUpload` handler settles the held update: when every uploaded chunk is stored or rejected, `MerkleIndex.apply` with the root the sync read, then `IndexAck` (with `rejected`). Risk: an initial index can take hours (R7), while a held update lives only in the stream's memory until the sync deadline; a dropped stream or a slow index starts over from the root. Persisting a settling sync, or applying in parts, is decided with slice 8.
+- Slice 11: the client answers `MerkleSyncRequest`s with `last_page` set on the last report, hashes with `inner_hash`'s format, sends a new `MerkleRootReport` after a refused level, and does not answer a poll before its tree is built (an empty tree deletes the stored one).
+- Owner decision (ADR-0018 consequences): the index is per repository, so any authorized client defines it; per-branch or per-user roots, or a large-delete guard, before teams share repositories.
+- Observability (Phase 7 dashboards): a gauge `xype_merkle_sync_held_nodes` and a counter of `sync too large` refusals, so an exhausted node budget shows on a dashboard, not only in logs.
+- Before hosting: cap held sync nodes per user (or one large sync per repository across streams) so one user cannot starve the process budget; size `MERKLE_SYNC_MAX_HELD_NODES` against the container memory (about 0.5 to 1 KB per held node); optionally map store outages in `children`/`root` to the sync refusal like `apply`, and refuse an upsert that re-parents an existing node unless its old parent is in the same update.
+- Load tests: whether sync reports should count against the per-user rate limit (an initial index of a large repository sends many), and `apply` time on a large tree.
+
 Carried forward from slice 7c:
-- Slice 7d: `MerkleTreeReport` needs a way to mark its last page (ADR-0018 deletes wait for it); the sync applies through `MerkleIndex.apply` with the root it read and restarts on `MerkleConflictError`.
+- Slice 7d (done): `MerkleTreeReport.last_page`; the sync applies through `MerkleIndex.apply` with the root it read and restarts on `MerkleConflictError`.
 - Slice 9: the client's inner hash includes each leaf child's line range (ADR-0018 amendment), with shared vectors.
 - Slice 8: a vector delivered after the apply that deleted its leaf must not be stored: the `index.vectors` consumer writes only chunks whose leaf exists in `merkle_nodes`, ordered against `apply` by the repository row lock, with a test (delete the subtree, deliver the late vector, find nothing).
-- Slice 7d: the sync may also recompute inner hashes and the root from the stored children and refuse an inconsistent report; a dropped page deletes nothing (required test).
-- Slice 7d or the load tests: measure `MerkleIndex.apply` on a large sample tree; its whole-tree reachability check runs under the repository row lock on every sync. If it is too slow, check only the touched nodes (walk up from each stored node's parent). Give `apply` a `statement_timeout` and `lock_timeout` (`set_config(..., true)`) so a huge apply cannot hold the repository lock indefinitely. The sync also refuses a node whose parent is a leaf.
+- Slice 7d (done): every level is verified against its parent's hash; a dropped page deletes nothing (tested).
+- Slice 7d or the load tests: measure `MerkleIndex.apply` on a large sample tree; its whole-tree reachability check runs under the repository row lock on every sync. If it is too slow, check only the touched nodes (walk up from each stored node's parent). `apply` has a `statement_timeout` and `lock_timeout` (done in 7d). The sync only asks for the children of inner nodes, so a leaf never gets children (done in 7d).
 - A migration drops the unused `merkle_nodes.chunk_id` (the link is `leaf_node_id`).
 
 Carried forward from slice 7b:
 - Slice 8: the gateway refuses a `ChunkUpload` whose nested `ChunkRef.repository_id` differs from the authorised top-level id (`VectorStore.upsert` refuses it too), with a privacy test; the `index.vectors` consumer writes through `VectorStore`; `VECTOR_EF_SEARCH` joins the settings when the store is wired; `chunk_upload` handling extracts nested `ChunkRef` repository ids (with `leaf_node_id`) and binds `leaf_node_id` in each payload's AAD.
-- Slice 7d: handle `MerkleRootReport` (today refused as not handled after its repository check); validate `root_hash` and `MerkleNode.parent_id` as HMAC hex at the edge and never echo them.
+- Slice 7d (done): handle `MerkleRootReport`; `root_hash` and `MerkleNode.parent_id` are validated as HMAC hex at the edge and never echoed.
 - Phase 3: retrieval calls `VectorStore.search` only with ids authorised for the principal (Hello or `RepositoryAccess`), never with ids from a request field, with a cross-team test.
 
 Carried forward from slice 7a:
@@ -80,7 +88,7 @@ Carried forward from slice 6a:
 - Slice 6b (done): a stream whose session key was revoked or evicted after Hello stops at once: the revocation subscriber closes it, and a message checks that the key still exists (today it is caught at the first payload's `advance_nonce`, slice 8).
 - Slice 11: on `session key unknown, expired or not yours` the extension mints one new key and reconnects once; if that fails again it stops and tells the user (more windows than the 8-key cap). On `CODE_UNAVAILABLE` it reconnects with backoff.
 - Slice 8 (first payload): the per-direction use-count limit (2^24) next to the key-age check on every payload.
-- Slice 7d: compare `Hello.repository_roots` with the server's roots and start the Merkle sync.
+- Slice 7d (done): compare `Hello.repository_roots` with the server's roots and start the Merkle sync.
 - Slice 11: the extension's client sends heartbeats every `heartbeat_interval_s` and reconnects on `TokenRefreshRequired`, a `StreamError` or a close.
 
 Carried forward from slice 5b:

@@ -9,6 +9,7 @@ from typing import Any
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from common_lib.merkle import MerkleNodeUpdate, inner_hash
 from common_lib.secret_bytes import SecretBytes
 from common_lib.security import (
     CryptoBox,
@@ -107,3 +108,18 @@ def test_repository_key_wrap() -> None:
         nonce=bytes.fromhex(case["wrap_nonce_hex"]),
     )
     assert sealed.hex() == case["wrap_nonce_hex"] + case["wrapped_key_hex"]
+
+
+def test_merkle_inner_hash() -> None:
+    for case in VECTORS["merkle_inner_hash"]:
+        children = [
+            MerkleNodeUpdate(
+                c["node_id"],
+                "d" * 64,
+                c["hash"],
+                is_leaf=c["is_leaf"],
+                lines=tuple(c["lines"]) if c["lines"] else None,
+            )
+            for c in case["children"]
+        ]
+        assert inner_hash(children) == case["hash_hex"]
