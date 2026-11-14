@@ -236,6 +236,30 @@ class SemanticCache(Protocol):
 
 Key builders (pure functions, not an interface): `vector_search_key(user_id, team_id, query_hash)`, `completion_key(team_id, model_id, model_version, file_id, snippet_hash)`, `explanation_key(team_id, model_id, model_version, query_hash)`, `embedding_key(model_id, model_version, chunk_hash)`.
 
+## messaging
+
+```python
+# common_lib/messaging (slice 8a); the topology lives in the broker's definitions.
+@dataclass(frozen=True, slots=True)
+class Delivery:
+    body: bytes
+    message_id: str
+    correlation_id: str
+    attempt: int
+
+Handler = Callable[[Delivery], Awaitable[str | None]]   # None: ack; a reason: dead-letter;
+# RetryableError: retried after about 1, 2 and 4 minutes, then dead-lettered
+
+class MessageBus(Protocol):
+    async def publish(self, queue: str, body: bytes, *, message_id: str,
+                      correlation_id: str, ttl_ms: int | None = None) -> None:
+        """Persistent; returns after the broker's confirm, routed (`mandatory`)."""
+    async def consume(self, queue: str, handler: Handler, *, prefetch: int) -> None: ...
+    async def close(self) -> None: ...
+
+# common_lib/index_messages: ChunkJob (index.chunks), EmbeddedChunk | RejectedChunk (index.vectors)
+```
+
 ## tasks
 
 ```python

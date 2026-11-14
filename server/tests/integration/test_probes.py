@@ -72,6 +72,8 @@ def rabbitmq() -> Iterator[BackendSettings]:
         "RABBITMQ_VHOST": "xype",
         "RABBITMQ_BACKEND_USER": "backend",
         "RABBITMQ_BACKEND_PASSWORD": TEST_PASSWORD,
+        "RABBITMQ_INDEXER_USER": "indexer",
+        "RABBITMQ_INDEXER_PASSWORD": TEST_PASSWORD,
     }
     with containers.rabbitmq(env) as container:
         yield make_settings(

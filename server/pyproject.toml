@@ -133,14 +133,14 @@ include_external_packages = true
 name = "The shared library outside models imports no web, transport, broker, cache, HTTP or ORM code"
 type = "forbidden"
 source_modules = [
-    "common_lib.auth", "common_lib.clock", "common_lib.correlation", "common_lib.domain", "common_lib.errors",
+    "common_lib.auth", "common_lib.clock", "common_lib.correlation", "common_lib.domain", "common_lib.errors", "common_lib.index_messages",
     "common_lib.llm", "common_lib.logging_config", "common_lib.merkle", "common_lib.remote_urls", "common_lib.repositories", "common_lib.secret_bytes",
     "common_lib.security",
     "common_lib.settings", "common_lib.tls", "common_lib.tracing", "common_lib.vectors",
 ]
 forbidden_modules = [
-    "backend", "llm", "common_lib.embeddings", "common_lib.keystore", "common_lib.models",
-    "fastapi", "starlette", "asyncpg",
+    "backend", "llm", "common_lib.embeddings", "common_lib.keystore", "common_lib.messaging",
+    "common_lib.models", "fastapi", "starlette", "asyncpg",
     "grpc", "aio_pika", "redis", "httpx", "sqlalchemy", "pgvector",
 ]
 
@@ -153,6 +153,17 @@ source_modules = ["common_lib.keystore"]
 forbidden_modules = [
     "backend", "llm", "common_lib.embeddings", "common_lib.models", "fastapi", "starlette",
     "grpc", "aio_pika", "httpx", "sqlalchemy", "asyncpg", "pgvector",
+]
+
+# The message bus is shared by the backend and the indexer (ADR-0015); it talks to the
+# broker and to nothing else.
+[[tool.importlinter.contracts]]
+name = "Messaging uses only a broker client"
+type = "forbidden"
+source_modules = ["common_lib.messaging"]
+forbidden_modules = [
+    "backend", "llm", "common_lib.embeddings", "common_lib.keystore", "common_lib.models",
+    "fastapi", "starlette", "grpc", "redis", "httpx", "sqlalchemy", "asyncpg", "pgvector",
 ]
 
 # The embedder is shared by the backend (queries) and the indexer (documents); it talks

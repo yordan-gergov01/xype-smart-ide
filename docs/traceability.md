@@ -39,7 +39,7 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3, the XYP
 | T33 | Circuit breaker per provider/model (3.9) | planned (3) | ADR-0023 (planned) | — |
 | T34 | Retries: capped (interactive), exp. backoff + jitter, max 3 (async) (3.9) | planned (3, 5) | ADR-0023 (planned), ADR-0004 | — |
 | T35 | Backup model chain, optional budget-aware fan-out (3.9) | planned (3) | — | schema: `llm_models.fallback_model_id` in `server/common_lib/models/llm.py` |
-| T36 | Sync completion; async chat/agents via RabbitMQ with priority, DLQ, delayed retries, idempotency (3.9) | deviation (ADR-0004) | ADR-0004 | vhost with quorum default: `deploy/docker/rabbitmq/conf.d/20-xype.conf`, rendered by `deploy/docker/rabbitmq/entrypoint.sh` |
+| T36 | Sync completion; async chat/agents via RabbitMQ with priority, DLQ, delayed retries, idempotency (3.9) | deviation (ADR-0004) | ADR-0004, ADR-0015 | vhost with quorum default: `deploy/docker/rabbitmq/conf.d/20-xype.conf`; index topology, users and permissions rendered by `deploy/docker/rabbitmq/entrypoint.sh`; `server/common_lib/messaging/` (bus, retries, DLQ), `server/common_lib/index_messages.py`; tests: `server/tests/unit/common_lib/test_bus.py`, `test_index_messages.py`, `test_message_privacy.py`, `server/tests/integration/test_bus.py` |
 | T37 | Task events pushed over the session stream (3.9) | planned (5) | — | — |
 | T38 | Reliability decision tree documented in `docs/reliability.md` (3.9) | planned (3) | ADR-0023 (planned) | — |
 | T39 | Prompt engineering: JSON-schema outputs, examples, negative prompting, model variants (3.10) | planned (4) | ADR-0026 (planned) | — |

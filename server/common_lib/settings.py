@@ -104,6 +104,17 @@ class PostgresSettings(TlsSettings):
     db_password: SecretStr
 
 
+class RabbitMQSettings(TlsSettings):
+    """Connection to RabbitMQ with one user (`RABBITMQ_*`), AMQPS only (ADR-0036)."""
+
+    rabbitmq_host: str
+    rabbitmq_port: int = Field(default=5671, ge=1, le=65535)
+    rabbitmq_vhost: str
+    rabbitmq_user: str
+    rabbitmq_password: SecretStr
+    rabbitmq_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+
+
 def load_settings[SettingsT: ServiceSettings](settings_cls: type[SettingsT]) -> SettingsT:
     """Create the settings or stop the process with a clear, value-free message.
 

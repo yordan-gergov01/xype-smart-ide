@@ -160,6 +160,8 @@ services:
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:?RABBITMQ_VHOST must be set}
       RABBITMQ_BACKEND_USER: ${RABBITMQ_BACKEND_USER:?RABBITMQ_BACKEND_USER must be set}
       RABBITMQ_BACKEND_PASSWORD: ${RABBITMQ_BACKEND_PASSWORD:?RABBITMQ_BACKEND_PASSWORD must be set}
+      RABBITMQ_INDEXER_USER: ${RABBITMQ_INDEXER_USER:?RABBITMQ_INDEXER_USER must be set}
+      RABBITMQ_INDEXER_PASSWORD: ${RABBITMQ_INDEXER_PASSWORD:?RABBITMQ_INDEXER_PASSWORD must be set}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./docker/rabbitmq/entrypoint.sh:/opt/xype/entrypoint.sh:ro

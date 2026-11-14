@@ -42,6 +42,10 @@ If you created the CA before Phase 2 slice 6a, run it once with `--rotate-ca`. A
 either lacks `keystore` in its name constraints or has the IP constraint gRPC cannot
 verify (ADR-0036); the generator says which.
 
+Phase 2 slice 8a added `RABBITMQ_INDEXER_USER` and `RABBITMQ_INDEXER_PASSWORD` (the indexer's
+broker user). Copy both from `deploy/env/.env.example` into an existing `deploy/env/.env`; the broker
+refuses to start without them, and it reads its users, permissions and queues at boot.
+
 Generate the keys once (auth: ADR-0014, KEK: ADR-0015) and paste each value into
 `deploy/env/.env`. The stack refuses to start while `AUTH_SIGNING_KEY_CURRENT`,
 `AUTH_PEPPER_CURRENT` or `KEK_CURRENT` is empty:

@@ -84,5 +84,6 @@ def redis(env: dict[str, str], *, service: str = "redis") -> DockerContainer:
 
 
 def rabbitmq(env: dict[str, str]) -> DockerContainer:
-    """Port 5671 (AMQPS) only. `env` sets the vhost and the backend's user."""
+    """Port 5671 (AMQPS) only, with the index topology. `env` sets the vhost and the
+    backend's and the indexer's users."""
     return _ready(_service("rabbitmq").with_envs(**env), 5671, "Server startup complete")
