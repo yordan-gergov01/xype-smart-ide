@@ -6,12 +6,17 @@ After that every message is checked by `SessionGate`, and the stream's own timer
 (`StreamTimers`) send `TokenRefreshRequired` and close it at token expiry, without a
 Hello, or after silence. A refusal answers with a `StreamError` carrying a fixed string;
 nothing from a request is echoed, logged or put on a span (rule 08).
+
+A message may get no answer or several: Hello answers with `HelloAck` and then a
+`MerkleSyncRequest` for each repository whose root differs (ADR-0018), and the stream's
+own poll asks for every root again once per interval.
 """
 
 import asyncio
 import math
 import time
-from collections.abc import AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import NoReturn
@@ -23,8 +28,9 @@ from opentelemetry.propagate import extract
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode, Tracer
 from xype.v1 import session_pb2
 
-from backend.grpc import messages
+from backend.grpc import messages, sync
 from backend.grpc.metrics import StreamMetrics
+from backend.services.indexing import MerkleSyncs
 from backend.services.session import (
     HELLO_FIRST,
     HELLO_TWICE,
@@ -49,6 +55,8 @@ logger = structlog.get_logger(__name__)
 type Request = session_pb2.SessionRequest
 type Response = session_pb2.SessionResponse
 type Context = aio.ServicerContext[Request, Response]
+# Builds a stream's syncs over the repositories authorized at its Hello.
+type SyncFactory = Callable[[frozenset[uuid.UUID]], MerkleSyncs]
 
 Code = session_pb2.StreamError
 _CLOSES = {
@@ -82,6 +90,7 @@ class _Stream:
     timers: StreamTimers
     ticket: StreamTicket
     open: OpenSession | None = None
+    syncs: MerkleSyncs | None = None
     reason: str | None = None  # why it closes; set once
     messages: int = field(default=0)
     rate_limited: int = field(default=0)  # in a row
@@ -93,12 +102,19 @@ class SessionStream:
         gate: SessionGate,
         registry: StreamRegistry,
         *,
+        syncs: SyncFactory,
         clock: Clock,
         metrics: StreamMetrics,
         tracer: Tracer,
     ) -> None:
         self._gate = gate
         self._registry = registry
+        self._syncs = syncs
+        self._handlers: dict[str, Callable[[_Stream, Request], Awaitable[list[Response]]]] = {
+            "heartbeat": self._heartbeat,
+            "merkle_root_report": self._root_report,
+            "merkle_tree_report": self._tree_report,
+        }
         self._clock = clock
         self._metrics = metrics
         self._tracer = tracer
@@ -135,6 +151,8 @@ class SessionStream:
             logger.error("session.unhandled_error", error=type(bug).__name__)
             stream.reason = "internal"
         finally:
+            if stream.syncs is not None:
+                stream.syncs.close()
             self._registry.close(stream.ticket)
             reader.cancel()
             try:
@@ -182,6 +200,10 @@ class SessionStream:
                 expires = stream.timers.token_expires_at
                 yield messages.token_refresh(now, stream.session_id, expires)
                 continue
+            if due is Due.POLL:
+                for out in await self._poll(stream):
+                    yield out
+                continue
             if due is not None:
                 code, text = _CLOSES[due]
                 stream.reason = due.value
@@ -195,9 +217,10 @@ class SessionStream:
                 failed = not reader.cancelled() and reader.exception() is not None
                 stream.reason = "read_failed" if failed else "client_closed"
                 return
-            yield await self._handle(stream, request)
+            for out in await self._handle(stream, request):
+                yield out
 
-    async def _handle(self, stream: _Stream, request: Request) -> Response:
+    async def _handle(self, stream: _Stream, request: Request) -> list[Response]:
         body = messages.kind(request)
         correlation_id = messages.correlation_of(request, stream.session_id)
         stream.timers.seen(self._clock.now())
@@ -214,12 +237,13 @@ class SessionStream:
         if stream.rate_limited >= _RATE_LIMITED_IN_A_ROW:
             stream.reason = "rate_limited"
         self._metrics.messages.labels(body, outcome).inc()
-        out.envelope.correlation_id = correlation_id
+        for one in out:
+            one.envelope.correlation_id = correlation_id
         return out
 
     async def _outcome(
         self, stream: _Stream, request: Request, body: str, correlation_id: str
-    ) -> tuple[str, Response]:
+    ) -> tuple[str, list[Response]]:
         try:
             return "ok", await self._dispatch(stream, request, body)
         except RefusedError as refused:
@@ -229,57 +253,93 @@ class SessionStream:
                 # the message itself failed (the key was deleted with the revocation).
                 stream.reason = ending
                 code, text = _ENDINGS[ending]
-                return "refused", self._error(correlation_id, code, text)
+                return "refused", [self._error(correlation_id, code, text)]
             # Before a valid Hello there is nothing to keep; after it, only a key past its
             # age ends the stream (the client mints a new key and reconnects).
             if stream.open is None or refused.reason == KEY_UNUSABLE:
                 stream.reason = "refused"
-            return "refused", self._error(correlation_id, Code.CODE_INVALID_REQUEST, refused.reason)
+            return "refused", [
+                self._error(correlation_id, Code.CODE_INVALID_REQUEST, refused.reason)
+            ]
         except RateLimitedError as limited:
             retry_ms = math.ceil(limited.retry_after_seconds * 1000)
-            return "rate_limited", self._error(
-                correlation_id, Code.CODE_RATE_LIMITED, "rate limited", retry_ms
-            )
+            return "rate_limited", [
+                self._error(correlation_id, Code.CODE_RATE_LIMITED, "rate limited", retry_ms)
+            ]
         except DependencyUnavailableError:
             stream.reason = "unavailable"
-            return "unavailable", self._error(correlation_id, Code.CODE_UNAVAILABLE, "unavailable")
+            return "unavailable", [
+                self._error(correlation_id, Code.CODE_UNAVAILABLE, "unavailable")
+            ]
         except Exception as bug:  # noqa: BLE001 - the transport boundary: the stream ends
             # Type only: an exception message may carry request content (rule 08).
             logger.error("session.unhandled_error", error=type(bug).__name__)
             stream.reason = "internal"
-            return "internal", self._error(correlation_id, Code.CODE_INTERNAL, "internal error")
+            return "internal", [self._error(correlation_id, Code.CODE_INTERNAL, "internal error")]
 
     def _error(
         self, correlation_id: str, code: session_pb2.StreamError.Code, text: str, retry_ms: int = 0
     ) -> Response:
         return messages.stream_error(self._clock.now(), correlation_id, code, text, retry_ms)
 
-    async def _dispatch(self, stream: _Stream, request: Request, body: str) -> Response:
-        now = self._clock.now()
+    async def _dispatch(self, stream: _Stream, request: Request, body: str) -> list[Response]:
         if body == "hello":
-            if stream.open is not None:
-                await self._gate.message(stream.open)  # counted like any other message
-                raise RefusedError(HELLO_TWICE)
-            hello = messages.hello_request(request.hello)
-            stream.open = await self._gate.hello(stream.claims, hello, stream.session_id)
-            policy = self._gate.policy
-            ack = session_pb2.HelloAck(
-                session_id=stream.session_id,
-                heartbeat_interval_s=policy.heartbeat_interval_s,
-                rate_limit_per_minute=policy.requests_per_minute,
-            )
-            return messages.response(
-                now, stream.session_id, session_pb2.SessionResponse(hello_ack=ack)
-            )
+            return await self._hello(stream, request)
         if stream.open is None:
             raise RefusedError(HELLO_FIRST)
         await self._gate.message(stream.open, messages.repository_ids(request))
-        if body == "heartbeat":
-            beat = session_pb2.Heartbeat(seq=request.heartbeat.seq)
-            return messages.response(
-                now, stream.session_id, session_pb2.SessionResponse(heartbeat=beat)
-            )
-        raise RefusedError(UNSUPPORTED)
+        handler = self._handlers.get(body)
+        if handler is None:
+            raise RefusedError(UNSUPPORTED)
+        return await handler(stream, request)
+
+    async def _hello(self, stream: _Stream, request: Request) -> list[Response]:
+        if stream.open is not None:
+            await self._gate.message(stream.open)  # counted like any other message
+            raise RefusedError(HELLO_TWICE)
+        hello = messages.hello_request(request.hello)
+        stream.open = await self._gate.hello(stream.claims, hello, stream.session_id)
+        stream.syncs = self._syncs(stream.open.repository_ids)
+        policy, now = self._gate.policy, self._clock.now()
+        ack = session_pb2.HelloAck(
+            session_id=stream.session_id,
+            heartbeat_interval_s=policy.heartbeat_interval_s,
+            rate_limit_per_minute=policy.requests_per_minute,
+        )
+        steps = []
+        for repository_id, root in sorted(hello.repository_roots.items()):
+            steps += await stream.syncs.start(uuid.UUID(repository_id), root)
+        acked = messages.response(
+            now, stream.session_id, session_pb2.SessionResponse(hello_ack=ack)
+        )
+        return [acked, *sync.responses(now, stream.session_id, steps)]
+
+    async def _heartbeat(self, stream: _Stream, request: Request) -> list[Response]:
+        beat = session_pb2.Heartbeat(seq=request.heartbeat.seq)
+        out = session_pb2.SessionResponse(heartbeat=beat)
+        return [messages.response(self._clock.now(), stream.session_id, out)]
+
+    async def _root_report(self, stream: _Stream, request: Request) -> list[Response]:
+        assert stream.syncs is not None  # noqa: S101 - built at Hello
+        repository_id, root = sync.root_report(request.merkle_root_report)
+        steps = await stream.syncs.start(repository_id, root)
+        return sync.responses(self._clock.now(), stream.session_id, steps)
+
+    async def _tree_report(self, stream: _Stream, request: Request) -> list[Response]:
+        assert stream.syncs is not None  # noqa: S101 - built at Hello
+        steps = await stream.syncs.report(sync.tree_report(request.merkle_tree_report))
+        return sync.responses(self._clock.now(), stream.session_id, steps)
+
+    async def _poll(self, stream: _Stream) -> list[Response]:
+        """The server's own question; a store that is down skips this round."""
+        if stream.syncs is None:
+            return []
+        try:
+            steps = await stream.syncs.poll()
+        except DependencyUnavailableError:
+            logger.info("sync.poll.skipped")
+            return []
+        return sync.responses(self._clock.now(), stream.session_id, steps)
 
     def _closed(self, stream: _Stream, span: Span, seconds: float) -> None:
         reason = stream.reason or "cancelled"

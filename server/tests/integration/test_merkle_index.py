@@ -7,6 +7,7 @@ import asyncio
 import uuid
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from support.contracts import merkle as contract
 from support.contracts import vectors as vector_contract
@@ -14,7 +15,9 @@ from support.stores import register_repositories
 
 from backend.dal.indexing import PgMerkleIndex
 from backend.dal.retrieval import PgVectorStore
+from common_lib.errors import DependencyUnavailableError
 from common_lib.merkle import MerkleConflictError, MerkleNodeUpdate, MerkleUpdate
+from common_lib.models import Repository
 
 pytestmark = pytest.mark.integration
 
@@ -122,3 +125,17 @@ async def test_two_syncs_of_one_repository_cannot_both_apply(
     winner = contract.ROOT_2 if results[0] is None else contract.ROOT_3
     assert await index.root(repo) == winner
     assert isinstance(next(r for r in results if r is not None), MerkleConflictError)
+
+
+async def test_an_apply_waits_for_a_held_lock_only_so_long(
+    index_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    (repo,) = await register_repositories(index_sessions, count=1)
+    index = PgMerkleIndex(index_sessions, lock_timeout_ms=200)
+    async with index_sessions.begin() as holder:
+        locked = select(Repository.id).where(Repository.id == repo).with_for_update()
+        await holder.execute(locked)
+        with pytest.raises(DependencyUnavailableError):
+            await index.apply(repo, None, MerkleUpdate(contract.ROOT_1, contract.TREE))
+    await index.apply(repo, None, MerkleUpdate(contract.ROOT_1, contract.TREE))
+    assert await index.root(repo) == contract.ROOT_1

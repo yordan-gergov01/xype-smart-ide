@@ -26,15 +26,17 @@ from backend.core.connections import (
     create_keystore_client,
     create_redis_client,
 )
-from backend.core.session import session_gate, session_stream
+from backend.core.session import session_gate, session_stream, sync_factory
 from backend.core.settings import BackendSettings
 from backend.dal.auth import RedisRevocationSubscriber
 from backend.dal.health import DatabaseProbe, RedisProbe
+from backend.dal.indexing import PgMerkleIndex
 from backend.dal.session import SqlRepositoryAccess
 from backend.grpc import SessionStream, create_grpc_server
 from backend.messaging.health import BrokerProbe
 from backend.services.auth import AuthDependencies, RevocationSubscriber
 from backend.services.health import DependencyProbe, HealthService
+from backend.services.indexing import MerkleIndex
 from backend.services.session import RepositoryAccess, StreamRegistry, listen_for_revocations
 from common_lib.clock import Clock, SystemClock
 from common_lib.logging_config import configure_logging
@@ -61,6 +63,16 @@ def _default_probes(
     )
 
 
+def _observability(settings: BackendSettings) -> TracerProvider:
+    """Logs and traces first, so everything after them is observed."""
+    configure_logging(
+        service=SERVICE_NAME, level=settings.log_level, log_format=settings.log_format
+    )
+    return configure_tracing(
+        service=SERVICE_NAME, otlp_endpoint=settings.otel_exporter_otlp_endpoint
+    )
+
+
 def create_app(
     settings: BackendSettings | None = None,
     *,
@@ -69,15 +81,11 @@ def create_app(
     repositories: RepositoryAccess | None = None,
     revocations: RevocationSubscriber | None = None,
     clock: Clock | None = None,
+    merkle: MerkleIndex | None = None,
 ) -> FastAPI:
     """Build the app. Settings come from the environment unless given; tests pass fakes."""
     settings = settings or load_settings(BackendSettings)
-    configure_logging(
-        service=SERVICE_NAME, level=settings.log_level, log_format=settings.log_format
-    )
-    tracer_provider = configure_tracing(
-        service=SERVICE_NAME, otlp_endpoint=settings.otel_exporter_otlp_endpoint
-    )
+    tracer_provider = _observability(settings)
     database = create_database(settings)
     redis, keystore = create_redis_client(settings), create_keystore_client(settings)
     if probes is None:
@@ -86,11 +94,15 @@ def create_app(
     auth = auth or auth_dependencies(settings, database, redis, keystore)
     repositories = repositories or SqlRepositoryAccess(database.read_sessions)
     revocations = revocations or RedisRevocationSubscriber(redis)
+    merkle = merkle or PgMerkleIndex(database.write_sessions)
     registry, tracer = CollectorRegistry(), tracer_provider.get_tracer(SERVICE_NAME)
     authentication = auth_service(settings, auth, clock)
     gate = session_gate(settings, authentication, auth, repositories, clock)
     streams = StreamRegistry()
-    stream = session_stream(gate, streams, clock=clock, metrics=registry, tracer=tracer)
+    syncs = sync_factory(settings, merkle, clock)
+    stream = session_stream(
+        gate, streams, syncs=syncs, clock=clock, metrics=registry, tracer=tracer
+    )
     closers = (database.dispose, redis.aclose, keystore.aclose)
     app = FastAPI(
         title="XYPE backend",

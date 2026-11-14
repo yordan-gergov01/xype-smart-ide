@@ -152,6 +152,41 @@ vectors["repository_key_wrap"] = {
     "wrapped_key_hex": AESGCM(wrapping).encrypt(repo_nonce, repo_key, repo_aad).hex(),
 }
 
+# Merkle inner hashes (ADR-0018): sorted by node id; node_id and hash as ASCII hex, one
+# byte is_leaf, and for a leaf two 4-byte big-endian line numbers.
+def inner(children: list[tuple[str, str, bool, tuple[int, int] | None]]) -> str:
+    digest = hashlib.sha256()
+    for node_id, hash_, is_leaf, lines in sorted(children):
+        digest.update(node_id.encode() + hash_.encode() + (b"\x01" if is_leaf else b"\x00"))
+        if lines is not None:
+            digest.update(lines[0].to_bytes(4, "big") + lines[1].to_bytes(4, "big"))
+    return digest.hexdigest()
+
+
+leaf_children = [
+    ("b" * 64, "1" * 64, True, (12, 30)),
+    ("a" * 64, "2" * 64, True, (1, 10)),
+]
+file_hash = inner(leaf_children)
+dir_children = [("c" * 64, file_hash, False, None)]
+vectors["merkle_inner_hash"] = [
+    {"children": [], "hash_hex": inner([])},
+    {
+        "children": [
+            {"node_id": n, "hash": h, "is_leaf": leaf, "lines": list(lines) if lines else None}
+            for n, h, leaf, lines in leaf_children
+        ],
+        "hash_hex": file_hash,
+    },
+    {
+        "children": [
+            {"node_id": n, "hash": h, "is_leaf": leaf, "lines": None}
+            for n, h, leaf, _ in dir_children
+        ],
+        "hash_hex": inner(dir_children),
+    },
+]
+
 Path(sys.argv[1]).write_bytes(
     (json.dumps({"version": 1, **vectors}, indent=2) + "\n").encode("utf-8")
 )

@@ -206,6 +206,15 @@ class MerkleIndex(Protocol):
         self, repository_id: UUID, expected_root: str | None, update: MerkleUpdate,
     ) -> None:
         """Compare-and-set on the root; raises MerkleConflictError when it moved."""
+
+def inner_hash(children: Iterable[MerkleNodeUpdate]) -> str: ...   # ADR-0018
+
+class MerkleSyncs:
+    """One stream's syncs (backend/services/indexing/sync.py, slice 7d); values in steps.py."""
+    async def start(self, repository_id: UUID, client_root: str | None) -> list[SyncStep]: ...
+    async def poll(self) -> list[SyncStep]: ...
+    async def report(self, report: TreeReport) -> list[SyncStep]: ...
+# SyncStep = SyncRequest | SyncDelta | SyncDone
 ```
 
 ## cache

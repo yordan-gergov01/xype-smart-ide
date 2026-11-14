@@ -33,7 +33,7 @@ Chosen option: **1**.
   - A chunk with a symbol keeps its id when lines are inserted above it.
   - A chunk without a symbol (a block or line window) uses its ordinal in the file instead. Its id changes when a chunk is inserted before it, which costs a re-embed of the chunks that follow.
 - **Leaf hash.** `hmac_id(repo_key, "chunk-content", scrubbed_text)`.
-- **Inner hash.** SHA-256 over the children, sorted by `node_id`, each child serialised as `node_id ‖ hash ‖ is_leaf` (fixed 64 + 64 hex + 1 byte), and for a leaf child also `line_start ‖ line_end` (two 4-byte big-endian integers; amended in slice 7c, see below). The root hash is stored in `repositories.merkle_root_hash`.
+- **Inner hash.** SHA-256 over the children, sorted by `node_id`, each child serialised as `node_id` and `hash` (64 lowercase hex characters each, as ASCII), one byte `is_leaf` (`0x01` or `0x00`) and, for a leaf child only, `line_start` and `line_end` as 4-byte big-endian integers (amended in slice 7c, see below); fixed widths, no framing. No children: SHA-256 of nothing. The root hash is this over the top-level nodes and is stored in `repositories.merkle_root_hash`. `common_lib.merkle.inner_hash`; shared vectors `merkle_inner_hash` in `packages/crypto-vectors`.
 - **Top level.** The root has no node of its own: its hash is `repositories.merkle_root_hash`, and its children have no parent (`parent_id` NULL in `merkle_nodes`, the empty string on the wire, where an empty `node_ids` in a `MerkleSyncRequest` asks for them).
 
 ### Protocol
@@ -68,7 +68,19 @@ These arrive in slice 6 (`Hello`) and slice 7 (index messages). They are additiv
 
 ### Amendment (slice 7c): leaf line ranges in the inner hash
 
-As first written, no hash covered a leaf's line range: the leaf hash is over the scrubbed content and a `chunk-pos` id has no line numbers. Inserting lines above a function then changed no hash, the roots stayed equal, no sync ran, and the stored range went stale, so this ADR's own confirmation case ("inserting lines above a function updates its stored range") could not pass. A leaf child's `line_start ‖ line_end` is therefore part of its parent's inner hash, not of the leaf hash: a moved chunk changes the hashes on its path, the sync finds it, and only its stored range is updated (no re-embed). Nothing computes inner hashes yet; the client (slice 9) and its shared test vectors follow this rule. The ADR stays Proposed until the owner approves it.
+As first written, no hash covered a leaf's line range: the leaf hash is over the scrubbed content and a `chunk-pos` id has no line numbers. Inserting lines above a function then changed no hash, the roots stayed equal, no sync ran, and the stored range went stale, so this ADR's own confirmation case ("inserting lines above a function updates its stored range") could not pass. A leaf child's `line_start ‖ line_end` is therefore part of its parent's inner hash, not of the leaf hash: a moved chunk changes the hashes on its path, the sync finds it, and only its stored range is updated (no re-embed). The owner approved this amendment on 2026-11-13 (the ADR as a whole stays Proposed). The server computes the hash from slice 7d to verify each reported level; the client (slice 9) follows the same shared vectors.
+
+### Implementation notes (slice 7d)
+
+- **Verification (owner, 2026-11-13).** The server checks every completed level against the hash reported one level up: the top level against the report's `root_hash`, each later parent's children against the hash its parent had in the previous level. A skipped parent, a dropped or forged page, or a tree that changed during the sync is refused (`tree does not match its hashes`) and the sync is forgotten; nothing is compared, deleted or applied. The client sends a new root report to start again; there is no automatic retry.
+- **Paging.** `MerkleTreeReport.last_page` (field 5) ends a request's answer; unset means more pages follow, so a forgotten field never ends a level early. At most 2 000 nodes per report and 2 000 parents per request; more changed parents are queued for the next requests. A node repeated within a sync, a child of an unrequested parent or a leaf at the top level is refused as malformed.
+- **Result.** Changed or new inner nodes are stored and descended; every leaf under a changed parent is stored with its lines (moved ranges are copied, no re-embed); changed or new leaves are uploaded, each `ChunkRef` with `obfuscated_file_id` = its parent's node id (the file node, ADR-0016); stored children the client no longer reports are deleted. Without uploads the sync applies at once and answers `IndexAck { server_root_hash }`; with uploads it answers `MerkleDelta` pages (2 000 references each) and holds the update until the uploads settle (slice 8).
+- **Triggers.** `Hello.repository_roots` (after `HelloAck`), a `MerkleRootReport`, and the stream's poll every `MERKLE_POLL_INTERVAL_S` (600) for the repositories authorized at Hello without a running sync. A new trigger for a repository restarts its sync. A sync is forgotten after `MERKLE_SYNC_DEADLINE_S` (600). A lost compare-and-set race restarts from the root at most `MERKLE_SYNC_MAX_RESTARTS` (3) times. One stream holds at most 500 000 nodes across its syncs.
+- **Rate limit.** Every report counts against the per-user limit; a report refused by it leaves the sync as it was, so the client sends it again later.
+- **Memory.** Every node a sync holds counts against the stream's share (500 000) and against a budget all streams of one process share (`MERKLE_SYNC_MAX_HELD_NODES`, 1 000 000); a sync over either is refused (`sync too large`), and a closed stream gives its nodes back.
+- **Refusals keep the stream.** A node that changes kind or moves to another parent within one sync is malformed; a store timeout or a lock held by another sync's `apply` refuses the sync (`sync could not be applied now`) and the stream stays open.
+- **No root, no sync.** A repository authorized at Hello without a root in `repository_roots` is not synced at Hello: the client has no tree yet, and an empty answer would delete the stored one. The poll asks later; the client answers it only once its tree is built (slice 11). Equal roots end a sync silently.
+- **`apply` limits.** `statement_timeout` 60 s and `lock_timeout` 5 s for its transaction; a timeout closes the stream as unavailable and the client reconnects.
 
 ### Implementation notes (slice 7c)
 
@@ -89,10 +101,11 @@ The contract changes above are in the proto: `MerkleRootReport` (a `SessionReque
 - Good: it maps onto `merkle_nodes` (parent links) with small, additive contract changes.
 - Bad: a very flat directory with thousands of files has a large fan-out at one level. Paging handles it, but that level costs more than O(log n).
 - Bad: the server sees the shape of the tree (how many children each node has), though not names. This is recorded in `docs/privacy.md`.
+- Bad (owner's decision pending): the index is per repository, so any authorized developer's client defines it. Two developers on different branches re-sync over each other, and a buggy or hostile client of the team can empty the index (a consistent empty tree deletes everything). Options: roots per branch or per user, a guard on large deletes, or audit counts (already logged: `stored`, `deleted`).
 
 ### Confirmation
 
-Unit tests with a fake `MerkleIndex`:
+Unit tests with a fake `MerkleIndex` (`server/tests/unit/backend/test_merkle_sync.py`, over the stream in `test_stream_sync.py`):
 - identical trees sync in one message;
 - one changed chunk gives exactly one upload;
 - a deleted file deletes its subtree;

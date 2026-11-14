@@ -43,9 +43,21 @@ _BATCH = 1000
 
 
 class PgMerkleIndex:
-    def __init__(self, write_sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        write_sessions: async_sessionmaker[AsyncSession],
+        *,
+        statement_timeout_ms: int = 60_000,
+        lock_timeout_ms: int = 5_000,
+    ) -> None:
         # The sync reads what it is about to write: the primary only.
         self._sessions = write_sessions
+        # An apply holds the repository's row lock: a huge or stuck one must not hold it
+        # without end, and a sync waiting for it gives up (`DependencyUnavailableError`).
+        self._timeouts = {
+            "statement_timeout": str(statement_timeout_ms),
+            "lock_timeout": str(lock_timeout_ms),
+        }
 
     async def root(self, repository_id: uuid.UUID) -> str | None:
         query = select(Repository.merkle_root_hash).where(Repository.id == repository_id)
@@ -84,6 +96,9 @@ class PgMerkleIndex:
         self, repository_id: uuid.UUID, expected_root: str | None, update: MerkleUpdate
     ) -> None:
         async with transaction(self._sessions) as session:
+            for name, value in self._timeouts.items():
+                # `SET LOCAL` takes no bind parameters; `set_config(..., true)` is the same.
+                await session.execute(select(func.set_config(name, value, True)))
             await _move_root(session, repository_id, expected_root, update.new_root)
             for start in range(0, len(update.deleted), _BATCH):
                 await _delete_subtrees(

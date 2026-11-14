@@ -16,6 +16,7 @@ class Due(StrEnum):
     NO_HELLO = "no_hello"  # the client never said Hello
     IDLE = "idle"  # no message, not even a heartbeat, for too long
     EXPIRED = "expired"  # the access token the stream was opened with expired
+    POLL = "poll"  # ask for the roots again (ADR-0018's 10-minute poll), once per interval
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +30,8 @@ class StreamPolicy:
     max_repositories: int
     # Announced in HelloAck: the per-user limit stream messages count against.
     requests_per_minute: int
+    # After Hello, the server asks for every repository's root this often (ADR-0018).
+    merkle_poll_interval_s: int = 600
 
 
 class StreamTimers:
@@ -39,14 +42,18 @@ class StreamTimers:
         self._last_seen = opened_at
         self._hello = False
         self._refresh_sent = False
+        self._polled_at = opened_at
 
     @property
     def token_expires_at(self) -> datetime:
         return self._expires_at
 
     def seen(self, now: datetime, *, hello: bool = False) -> None:
-        """Any message from the client keeps the stream alive."""
+        """Any message from the client keeps the stream alive. The poll interval starts
+        at Hello, which already compares the roots."""
         self._last_seen = now
+        if hello and not self._hello:
+            self._polled_at = now
         self._hello = self._hello or hello
 
     def due(self, now: datetime) -> Due | None:
@@ -60,6 +67,9 @@ class StreamTimers:
         if not self._refresh_sent and now >= self._refresh_at:
             self._refresh_sent = True
             return Due.REFRESH
+        if self._hello and now >= self._poll_at:
+            self._polled_at = now
+            return Due.POLL
         return None
 
     def next_check(self, now: datetime) -> float:
@@ -69,6 +79,8 @@ class StreamTimers:
             deadlines.append(self._hello_deadline)
         if not self._refresh_sent:
             deadlines.append(self._refresh_at)
+        if self._hello:
+            deadlines.append(self._poll_at)
         return max(0.0, (min(deadlines) - now).total_seconds())
 
     @property
@@ -78,6 +90,10 @@ class StreamTimers:
     @property
     def _idle_deadline(self) -> datetime:
         return self._last_seen + timedelta(seconds=self._policy.idle_timeout_s)
+
+    @property
+    def _poll_at(self) -> datetime:
+        return self._polled_at + timedelta(seconds=self._policy.merkle_poll_interval_s)
 
     @property
     def _refresh_at(self) -> datetime:

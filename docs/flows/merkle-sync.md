@@ -22,8 +22,9 @@ sequenceDiagram
         loop one round trip per tree level
             G-->>C: MerkleSyncRequest {node_ids to descend}
             C->>G: MerkleTreeReport {children with parent_id}
+            G->>G: check the level's hash against its parent's (the root first)
             G->>P: MerkleIndex.children(node_ids)
-            G->>G: keep children whose hash differs or is unknown; update moved line ranges
+            G->>G: keep children whose hash differs or is unknown; keep leaves for moved line ranges
         end
         G-->>C: MerkleDelta {ChunkRef[] to upload, deleted node ids}
         C->>G: ChunkUpload {changed chunks, new root}
@@ -42,4 +43,6 @@ sequenceDiagram
 | Indexer fails for some chunks | The new root is not applied; the next sync finds the same differences |
 | A chunk fails the server scrub re-check | It settles as rejected, is stored as a leaf without a vector and is not uploaded again |
 | Session key expired before indexing | The chunk goes to the dead-letter queue with a fixed reason; the next sync re-uploads it |
-| Report above 2 000 nodes or upload above 256 chunks | Paged; deletes wait for the last page |
+| Report above 2 000 nodes or upload above 256 chunks | Paged (`last_page`); nothing is compared or deleted before a level's last page |
+| A level does not hash to its parent's hash (a skipped page or parent, or the tree changed) | Refused; the sync is forgotten and nothing is written; the client sends a new root report |
+| Another sync of the repository applied first | The sync starts again from the root, at most three times |

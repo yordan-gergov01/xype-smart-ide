@@ -28,8 +28,12 @@ message MerkleSyncRequest {
 message MerkleTreeReport {
   string request_id = 1;
   string repository_id = 2;
-  string root_hash = 3;
+  string root_hash = 3; // the client's root; checked against the reported top level
   repeated MerkleNode nodes = 4; // children of requested nodes
+  // A request's children may span several reports (at most 2 000 nodes each, same
+  // request_id); the last one sets this. Unset means more follow, so a forgotten field
+  // never ends a level early (nothing is compared or deleted before it).
+  bool last_page = 5;
 }
 
 message MerkleNode {
