@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from backend.core.settings import BackendSettings
+from common_lib.keystore import connect_keystore
 from common_lib.models.connection import postgres_url
 from common_lib.tls import MINIMUM_TLS, client_context
 
@@ -73,13 +74,7 @@ def create_redis_client(settings: BackendSettings) -> Redis:
 
 def create_keystore_client(settings: BackendSettings) -> Redis:
     """The non-evicting key store for session keys (ADR-0015)."""
-    return _redis(
-        settings,
-        host=settings.keystore_host,
-        port=settings.keystore_port,
-        user=settings.keystore_user,
-        password=settings.keystore_password,
-    )
+    return connect_keystore(settings)
 
 
 def _redis(

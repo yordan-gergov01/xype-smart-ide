@@ -127,6 +127,8 @@ services:
       REDIS_PASSWORD: ${KEYSTORE_PASSWORD:?KEYSTORE_PASSWORD must be set}
       REDIS_BACKEND_USER: ${KEYSTORE_BACKEND_USER:?KEYSTORE_BACKEND_USER must be set}
       REDIS_BACKEND_PASSWORD: ${KEYSTORE_BACKEND_PASSWORD:?KEYSTORE_BACKEND_PASSWORD must be set}
+      REDIS_INDEXER_USER: ${KEYSTORE_INDEXER_USER:?KEYSTORE_INDEXER_USER must be set}
+      REDIS_INDEXER_PASSWORD: ${KEYSTORE_INDEXER_PASSWORD:?KEYSTORE_INDEXER_PASSWORD must be set}
       REDISCLI_AUTH: ${KEYSTORE_PASSWORD:?KEYSTORE_PASSWORD must be set}
     volumes:
       - ./docker/redis/entrypoint.sh:/opt/xype/entrypoint.sh:ro
@@ -309,6 +311,69 @@ services:
     mem_limit: 256m
 
   # The only service on a network with a published port; forwards to the backend.
+  # Decrypts chunks in memory, re-checks them for secrets, embeds and wipes them
+  # (ADR-0015, ADR-0019). No database and no route out; the key store only through its
+  # GET-only ACL user.
+  indexer:
+    <<: *hardening
+    build:
+      context: ../server
+      dockerfile: indexer/Dockerfile
+      target: runtime
+      # The shared scrub rules live outside server/ (ADR-0019).
+      additional_contexts:
+        scrub_rules: ../packages/scrub-rules
+    image: xype-indexer:dev
+    user: "10001:10001"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      KEYSTORE_HOST: keystore
+      KEYSTORE_USER: ${KEYSTORE_INDEXER_USER:?KEYSTORE_INDEXER_USER must be set}
+      KEYSTORE_PASSWORD: ${KEYSTORE_INDEXER_PASSWORD:?KEYSTORE_INDEXER_PASSWORD must be set}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:?RABBITMQ_VHOST must be set}
+      RABBITMQ_USER: ${RABBITMQ_INDEXER_USER:?RABBITMQ_INDEXER_USER must be set}
+      RABBITMQ_PASSWORD: ${RABBITMQ_INDEXER_PASSWORD:?RABBITMQ_INDEXER_PASSWORD must be set}
+      TLS_CA_FILE: /certs/ca.crt
+      # Unwraps session keys from the key store (ADR-0015).
+      KEK_CURRENT: ${KEK_CURRENT:?generate KEK_CURRENT, see docs/runbooks/local-dev.md}
+      KEK_PREVIOUS: ${KEK_PREVIOUS:-}
+      OLLAMA_BASE_URL: http://ollama:11434
+    volumes:
+      # The CA certificate only: the indexer serves no TLS.
+      - type: bind
+        source: ./certs/ca.crt
+        target: /certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,noexec,nosuid,nodev
+    pids_limit: 64
+    networks:
+      - keys
+      - messaging
+      - models
+      - telemetry
+    depends_on:
+      keystore:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # A chunk in flight finishes or goes back to the queue (it is acknowledged last).
+    stop_grace_period: 15s
+    mem_limit: 192m
+
   edge:
     <<: *hardening
     image: nginxinc/nginx-unprivileged:1.30.6-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
@@ -490,7 +555,7 @@ networks:
   # Internal networks have no route to the internet or the host.
   data:
     internal: true
-  # The key store and its clients only: the backend now, the indexer in slice 8.
+  # The key store and its clients only: the backend and the indexer.
   keys:
     internal: true
   messaging:

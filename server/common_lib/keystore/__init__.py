@@ -4,6 +4,7 @@ Shared by the backend (all operations) and the indexer (`get` only, through an A
 that may only `GET xype:sk:*`). It talks to Redis and to nothing else.
 """
 
+from common_lib.keystore.connect import connect_keystore, kek_ring
 from common_lib.keystore.redis_store import RedisKeyStore
 
-__all__ = ["RedisKeyStore"]
+__all__ = ["RedisKeyStore", "connect_keystore", "kek_ring"]

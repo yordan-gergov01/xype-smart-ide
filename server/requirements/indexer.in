@@ -1,0 +1,21 @@
+# Direct runtime dependencies of the indexer worker (ADR-0015); a subset of the backend's,
+# kept at the backend's versions. Compile after backend.txt (server/README.md).
+-c backend.txt
+# Settings from environment variables only (ADR-0010) and the queue message schemas.
+pydantic
+pydantic-settings
+# Structured JSON logs (ADR-0011).
+structlog
+# The key store: GET only, through its own ACL user (ADR-0015).
+redis
+# RabbitMQ: reads index.chunks, publishes index.vectors.
+aio-pika
+# AES-256-GCM, HKDF and key unwrapping; the standard library has no AEAD.
+cryptography
+# The embedder's HTTP client (Ollama).
+httpx
+# Metrics and traces (ADR-0011).
+prometheus-client
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http

@@ -29,7 +29,7 @@ OPEN_NETWORK_MEMBERS = {
     "edge": {"edge"},
 }
 # Stores, broker and models are reached only from inside the stack.
-NO_PORTS = {"postgres", "redis", "keystore", "rabbitmq", "ollama", "backend", "migrate"}
+NO_PORTS = {"postgres", "redis", "keystore", "rabbitmq", "ollama", "backend", "indexer", "migrate"}
 PINNED_IMAGE = re.compile(r"^[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}$")
 
 
@@ -108,15 +108,15 @@ def test_default_memory_budget_leaves_room_for_the_workers() -> None:
     units = {"m": 1, "g": 1024}
     default = [s for s in SERVICES.values() if "profiles" not in s and s.get("restart") != "no"]
     total = sum(int(s["mem_limit"][:-1]) * units[s["mem_limit"][-1]] for s in default)
-    # 4 GiB in total, of which about 600 MiB are kept for the workers (llm, indexer).
-    assert total <= 4096 - 600, f"{total} MiB"
+    # 4 GiB in total, of which about 400 MiB are kept for the LLM worker.
+    assert total <= 4096 - 400, f"{total} MiB"
 
 
 # --- TLS with the local dev CA (ADR-0036) -------------------------------------------
 # Services that terminate TLS, each with its own certificate directory.
 TLS_SERVERS = {"edge", "backend", "postgres", "redis", "keystore", "rabbitmq"}
 # Services that only verify servers and get the CA certificate alone.
-TLS_CLIENTS_ONLY = {"migrate", "prometheus"}
+TLS_CLIENTS_ONLY = {"migrate", "prometheus", "indexer"}
 
 
 def _sources(service: dict[str, Any]) -> list[str]:
@@ -143,7 +143,7 @@ def test_services_get_only_their_own_certificate(name: str) -> None:
     assert not any("ca.key" in source for source in _sources(SERVICES[name]))
 
 
-@pytest.mark.parametrize("name", ["backend", "migrate"])
+@pytest.mark.parametrize("name", ["backend", "migrate", "indexer"])
 def test_store_clients_verify_against_the_dev_ca(name: str) -> None:
     assert SERVICES[name]["environment"]["TLS_CA_FILE"] == "/certs/ca.crt"
 
@@ -187,7 +187,10 @@ def test_the_key_store_is_reached_only_over_its_own_network() -> None:
     assert SERVICES["keystore"]["networks"] == ["keys"]
     assert COMPOSE["networks"]["keys"] == {"internal": True}
     members = {name for name, s in SERVICES.items() if "keys" in s.get("networks", [])}
-    assert members == {"keystore", "backend"}
+    assert members == {"keystore", "backend", "indexer"}
+    # Only the two services that unwrap keys hold the KEK.
+    holders = {name for name, s in SERVICES.items() if "KEK_CURRENT" in s.get("environment", {})}
+    assert holders == {"backend", "indexer"}
     assert SERVICES["keystore"]["environment"]["REDIS_MODE"] == "keystore"
     assert SERVICES["redis"]["environment"]["REDIS_MODE"] == "cache"
 
@@ -227,3 +230,15 @@ def test_the_session_stream_goes_through_the_edge_over_verified_tls() -> None:
     backend = SERVICES["backend"]
     assert backend["environment"]["GRPC_LISTEN_ADDRESS"] == "0.0.0.0:50051"
     assert backend["build"]["additional_contexts"] == {"proto": "../proto"}
+
+
+def test_the_indexer_has_no_database_and_reads_keys_only() -> None:
+    """ADR-0015: no Postgres, no route out, the key store through its GET-only user."""
+    indexer = SERVICES["indexer"]
+    assert set(indexer["networks"]) == {"keys", "messaging", "models", "telemetry"}
+    assert not any(name.startswith("DB_") for name in indexer["environment"])
+    assert indexer["environment"]["KEYSTORE_USER"].startswith("${KEYSTORE_INDEXER_USER")
+    assert indexer["environment"]["RABBITMQ_USER"].startswith("${RABBITMQ_INDEXER_USER")
+    assert indexer["build"]["additional_contexts"] == {"scrub_rules": "../packages/scrub-rules"}
+    script = (DEPLOY / "docker" / "redis" / "entrypoint.sh").read_text("utf-8")
+    assert "resetchannels %R~xype:sk:* -@all +get" in script

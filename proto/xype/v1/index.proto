@@ -80,4 +80,6 @@ enum RejectionReason {
   REJECTION_REASON_UNSPECIFIED = 0;
   REJECTION_REASON_SECRET_FOUND = 1; // the server's scrub re-check matched (ADR-0019)
   REJECTION_REASON_TOO_LARGE = 2; // over 64 KiB after decryption
+  REJECTION_REASON_UNSCANNABLE = 3; // the re-check could not run (not UTF-8, or over its budget)
+  REJECTION_REASON_UNEMBEDDABLE = 4; // the model refused the text or gave an unusable vector
 }

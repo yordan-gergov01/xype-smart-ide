@@ -2,6 +2,7 @@
 # of secrets and the local virtual environment.
 *
 !backend/
+!indexer/
 !migrations/
 !alembic.ini
 !common_lib/

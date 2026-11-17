@@ -18,7 +18,13 @@ class EmbeddingError(XypeError):
 
 
 class EmbeddingUnavailableError(EmbeddingError):
-    """The model server cannot be reached or did not answer in time."""
+    """The model server cannot be reached, did not answer in time, is overloaded or
+    failing, or lacks the model or the access (any status but 200, 400, 413, 422): worth
+    trying again later."""
+
+
+class EmbeddingRefusedError(EmbeddingError):
+    """The model server refused this input (400, 413, 422): trying again will not help."""
 
 
 class Embedder(Protocol):
@@ -44,6 +50,7 @@ def query_input(text: str, instruction: str) -> str:
 __all__ = [
     "Embedder",
     "EmbeddingError",
+    "EmbeddingRefusedError",
     "EmbeddingUnavailableError",
     "query_input",
 ]

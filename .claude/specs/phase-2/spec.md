@@ -58,8 +58,15 @@ Slice 7 is cut in three (owner, 2026-11-13):
 - 7c: `MerkleIndex` (DAL) with a fake and a contract suite (owner, 2026-11-13: 7c is cut in two).
 - 7d: the sync engine and its stream wiring: several responses per message, compare `Hello.repository_roots` with the server's roots and start the Merkle sync, `MerkleRootReport`, `MerkleTreeReport` with paging, `MerkleDelta`, a sync deadline, and the server's 10-minute poll (owner, 2026-11-13).
 
+Carried forward from slice 8b:
+- Slice 8c: the gateway checks and advances the nonce counter of every `ChunkUpload` payload (and the key's age) before it publishes the `ChunkJob`, atomically per key and direction (one script refusing `counter <= last` and 0), with a test that a replayed nonce is refused and never published (it also keeps two plaintexts under one GCM nonce off the broker's disk).
+- Before 8c enables uploads (security): a hard kill for the server scrub (a separate process with a kill timeout, or a linear-time regex engine), not only the 2 s `wait_for` that settles the chunk while the thread may keep running; a ReDoS check of the shared rules in CI with adversarial inputs per rule.
+- Slice 8c (optional third layer): bind the stream's authorised repositories or the team into the key record, so the indexer can refuse a foreign `repository_id` too.
+- Owner: run the stack with the indexer and re-measure memory (R12; `docker stats`), after adding `KEYSTORE_INDEXER_USER`, `KEYSTORE_INDEXER_PASSWORD`, `RABBITMQ_INDEXER_USER` and `RABBITMQ_INDEXER_PASSWORD` to the local environment file. The full stack was not run in 8b; the image alone idles at about 54 MiB of 192 MiB, healthy, `/readyz` 503 without a broker.
+- Before hosting: batch embeddings per consumer (one chunk at a time today) and more indexer replicas for the first index (R7).
+
 Carried forward from slice 8a:
-- Slice 8b: the indexer consumes `index.chunks` with `connect_bus` as its own user and publishes `EmbeddedChunk` / `RejectedChunk`; dead-letter reasons `key_unusable` and `decryption_failed` for an expired key or a failed tag.
+- Slice 8b (done): the indexer consumes `index.chunks` with `connect_bus` as its own user and publishes `EmbeddedChunk` / `RejectedChunk`; dead-letter reasons `key_unusable` and `decryption_failed` for an expired key or a failed tag.
 - Slice 8c: the gateway publishes `ChunkJob`s with a TTL no longer than the key's remaining life; the backend consumes `index.vectors` and accepts a result only for a leaf it has pending with the same repository and hash (dead-letter reason `not_pending`), with a privacy test that a forged result for another repository writes nothing and a test that a repeated job or result stores and settles once; `BrokerProbe` may reuse the bus's connection.
 - Slices 8b and 8c: each worker's composition root restarts `consume` with backoff when it ends with `DependencyUnavailableError` (a failed retry or dead-letter publish leaves the message unacknowledged, so it is delivered again); the job publisher always passes the session key's remaining life as `ttl_ms`; a test that a deadline passing in a delay queue ends `expired`; bus metrics (retries and dead letters by queue and reason, handler duration) and queue depth from the RabbitMQ Prometheus plugin.
 - Before hosting: the queue size limits and the broker's disk limit sized against the hosted volume; retry jitter with the Phase 5 task queues; NTP on every host (deadlines compare the publisher's and the consumer's wall clocks).
@@ -111,7 +118,7 @@ Carried forward from slice 5b:
 Carried forward from slice 3 (review):
 - Slice 5b (done: `check_key_age` and `expires_at`; the calls move to slice 6, above): enforce the 12-hour maximum session-key age from `created_at`.
 - Slice 6 (per-IP open limit done in 6a; the rest is 6b): the revocation subscriber closes the matching streams (the publisher lands in 5a); the backend's Redis ACL gains `+subscribe` for `xype:auth:revoked`; the edge proxy rate-limits stream opens per IP.
-- Slice 8: record a received nonce counter only after `CryptoBox.open` succeeded (the first payload is opened in the indexer).
+- Superseded in slice 8b: record a received nonce counter only after `CryptoBox.open` succeeded. The indexer may only `GET` keys and sees retried nonces again; the gateway checks and advances counters in 8c (ADR-0015, slice 8b notes).
 - Slice 6 (done in 6a): the gRPC server serves TLS with the backend's certificate and the edge proxy forwards with `grpc_pass grpcs://` and `grpc_ssl_verify on` (ADR-0036).
 - Slice 5b (done): the `keystore` Redis gets its own leaf (`SERVICES` in `server/devtools/dev_ca.py`; existing CAs need `--rotate-ca`), TLS-only like `redis`, and the key-store client uses `common_lib.tls`; its backend ACL allows `EVALSHA`/`SCRIPT LOAD`.
 - Slice 8: the indexer image includes `packages/scrub-rules/rules.json`; the re-check refuses chunks over 64 KiB and runs in `asyncio.to_thread`; `cryptography` goes into the indexer's requirements.

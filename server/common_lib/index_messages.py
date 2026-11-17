@@ -10,7 +10,6 @@ import uuid
 from typing import Annotated, Literal
 
 from pydantic import (
-    Base64Bytes,
     BaseModel,
     ConfigDict,
     Field,
@@ -37,7 +36,15 @@ type ModelPart = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._:/-]{1,
 
 
 class _Message(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    # Bytes are raw in Python and URL-safe base64 (padded) in JSON; reading accepts both
+    # base64 alphabets.
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        ser_json_bytes="base64",
+        val_json_bytes="base64",
+    )
 
     version: Literal[1] = SCHEMA_VERSION
 
@@ -87,8 +94,8 @@ class ChunkJob(_Message):
     request_id: SafeId
     field_number: Annotated[int, Field(ge=1, le=2**29 - 1)]
     chunk: WireChunkRef
-    nonce: Annotated[Base64Bytes, Field(min_length=12, max_length=12)]
-    ciphertext: Annotated[Base64Bytes, Field(min_length=16, max_length=MAX_CIPHERTEXT_BYTES)]
+    nonce: Annotated[bytes, Field(min_length=12, max_length=12)]
+    ciphertext: Annotated[bytes, Field(min_length=16, max_length=MAX_CIPHERTEXT_BYTES)]
 
 
 class EmbeddedChunk(_Message):
@@ -114,7 +121,10 @@ class RejectedChunk(_Message):
 
     outcome: Literal["rejected"] = "rejected"
     chunk: WireChunkRef
-    reason: Literal["secret_found", "too_large"]
+    # `unscannable`: the server check could not run (not UTF-8, or over its time budget);
+    # a chunk it cannot clear fails closed (ADR-0019).
+    # `unembeddable`: the model refused the text or answered something unusable.
+    reason: Literal["secret_found", "too_large", "unscannable", "unembeddable"]
 
 
 type IndexResult = EmbeddedChunk | RejectedChunk

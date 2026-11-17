@@ -12,7 +12,8 @@
 # LOAD (the rate limiter's and the key store's scripts). In the cache: keys under
 # `xype:`, and of pub/sub only PUBLISH and SUBSCRIBE on the one revocation channel
 # (ADR-0014; every gateway replica listens). In the key store: keys under `xype:sk`
-# only, and no pub/sub.
+# only, and no pub/sub. The key store also has the indexer's user (ADR-0015): one
+# command, `GET`, on session-key records only (`%R~xype:sk:*`, read-only).
 set -eu
 
 require() {
@@ -47,12 +48,23 @@ case "$REDIS_MODE" in
         extra="+publish +subscribe +unsubscribe"
         memory="maxmemory 64mb
 maxmemory-policy allkeys-lru"
+        others=""
         ;;
     keystore)
         scope="resetchannels ~xype:sk*"
         extra=""
         memory="maxmemory 16mb
 maxmemory-policy noeviction"
+        for name in REDIS_INDEXER_USER REDIS_INDEXER_PASSWORD; do
+            require "$name"
+        done
+        case "$REDIS_INDEXER_USER" in
+            default | "$REDIS_BACKEND_USER" | [~\&+\-]*)
+                echo "error: REDIS_INDEXER_USER must be its own user and not start with ~ & + -" >&2
+                exit 1
+                ;;
+        esac
+        others="user $REDIS_INDEXER_USER on >$REDIS_INDEXER_PASSWORD resetchannels %R~xype:sk:* -@all +get"
         ;;
     *)
         echo "error: REDIS_MODE must be cache or keystore" >&2
@@ -80,6 +92,7 @@ tls-auth-clients no
 tls-protocols "TLSv1.2 TLSv1.3"
 requirepass $REDIS_PASSWORD
 user $REDIS_BACKEND_USER on >$REDIS_BACKEND_PASSWORD $scope +@read +@write +@fast +@connection -@dangerous -@admin -@scripting -@pubsub +evalsha +script|load $extra
+$others
 save ""
 appendonly no
 $memory

@@ -115,6 +115,30 @@ class RabbitMQSettings(TlsSettings):
     rabbitmq_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
 
 
+class KeyStoreSettings(TlsSettings):
+    """The non-evicting `keystore` Redis (ADR-0015), TLS only, with this service's ACL
+    user: the backend reads and writes session keys, the indexer may only `GET` them."""
+
+    keystore_host: str
+    keystore_port: int = Field(default=6379, ge=1, le=65535)
+    keystore_user: str
+    keystore_password: SecretStr
+    keystore_socket_timeout_seconds: float = Field(default=2.0, gt=0, le=60)
+
+
+class KekSettings(ServiceSettings):
+    """The key-encryption key that wraps session and repository keys (ADR-0015). The
+    previous one only unwraps, during a rotation (docs/runbooks/key-rotation.md)."""
+
+    kek_current: KeyedSecret
+    kek_previous: KeyedSecret | None = None
+
+    @field_validator("kek_previous", mode="before")
+    @classmethod
+    def _no_previous(cls, value: object) -> object:
+        return None if value == "" else value
+
+
 def load_settings[SettingsT: ServiceSettings](settings_cls: type[SettingsT]) -> SettingsT:
     """Create the settings or stop the process with a clear, value-free message.
 

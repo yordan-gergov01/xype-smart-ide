@@ -11,7 +11,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = []
 
 [tool.setuptools.packages.find]
-include = ["common_lib*", "backend*", "llm*"]
+include = ["common_lib*", "backend*", "llm*", "indexer*"]
 
 [tool.ruff]
 target-version = "py312"
@@ -70,7 +70,7 @@ known-first-party = ["common_lib", "backend", "llm", "devtools"]
 python_version = "3.12"
 strict = true
 warn_unreachable = true
-files = ["common_lib", "backend", "llm", "devtools", "migrations", "tests"]
+files = ["common_lib", "backend", "llm", "indexer", "devtools", "migrations", "tests"]
 # Test folders have no __init__.py; name modules by their path so equally named
 # test files in different folders do not clash.
 explicit_package_bases = true
@@ -110,7 +110,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["common_lib", "backend", "llm", "devtools"]
+source = ["common_lib", "backend", "llm", "indexer", "devtools"]
 
 [tool.coverage.report]
 fail_under = 85
@@ -122,7 +122,7 @@ exclude_also = ['^\s*\.\.\.$', 'if TYPE_CHECKING:']
 # Contracts are added once the modules they name exist; a contract naming a
 # missing module fails.
 [tool.importlinter]
-root_packages = ["common_lib", "backend", "llm", "devtools"]
+root_packages = ["common_lib", "backend", "llm", "indexer", "devtools"]
 # Needed so contracts can forbid third-party packages.
 include_external_packages = true
 
@@ -181,13 +181,33 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "No service imports the developer tools"
 type = "forbidden"
-source_modules = ["common_lib", "backend", "llm"]
+source_modules = ["common_lib", "backend", "llm", "indexer"]
 forbidden_modules = ["devtools"]
 
 [[tool.importlinter.contracts]]
-name = "The backend and the LLM worker do not import each other"
+name = "The backend and the workers do not import each other"
 type = "independence"
-modules = ["backend", "llm"]
+modules = ["backend", "llm", "indexer"]
+
+# The indexer has no database (ADR-0015), not even through a shared module: the ORM,
+# the gRPC contract and the web framework never reach its image.
+[[tool.importlinter.contracts]]
+name = "The indexer has no database, web framework or gRPC"
+type = "forbidden"
+source_modules = ["indexer"]
+forbidden_modules = [
+    "common_lib.models", "sqlalchemy", "asyncpg", "pgvector", "fastapi", "starlette",
+    "uvicorn", "grpc", "xype", "google",
+]
+
+# Its broker, key store and model server are reached only through the shared adapters;
+# the composition root builds them.
+[[tool.importlinter.contracts]]
+name = "The indexer reaches Redis, RabbitMQ and HTTP only through common_lib"
+type = "forbidden"
+source_modules = ["indexer"]
+forbidden_modules = ["redis", "aio_pika", "httpx"]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "The LLM worker has no database or cache access"

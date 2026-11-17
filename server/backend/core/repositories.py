@@ -1,12 +1,12 @@
 """Builds repository registration from the settings, for the admin CLI (and the admin
 dashboard in Phase 7)."""
 
-from backend.core.auth import kek_ring
 from backend.core.connections import Database
 from backend.core.settings import BackendSettings
 from backend.dal.repositories import SqlRepositoryStore
 from backend.services.repositories import RepositoryAdmin, TeamDirectory
 from common_lib.clock import Clock
+from common_lib.keystore import kek_ring
 
 
 def repository_admin(

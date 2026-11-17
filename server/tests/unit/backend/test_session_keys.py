@@ -16,10 +16,11 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from support.backend import Harness, HarnessFactory, emitted
 
-from backend.core.auth import client_admin, kek_ring
+from backend.core.auth import client_admin
 from backend.services.repositories import RepositoryAdmin
 from common_lib.clock import SystemClock
 from common_lib.errors import DependencyUnavailableError
+from common_lib.keystore import kek_ring
 from common_lib.secret_bytes import SecretBytes
 from common_lib.security import KekPurpose, WrappedKey, frame, hkdf, repository_key_aad, unwrap_key
 

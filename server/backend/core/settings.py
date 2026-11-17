@@ -5,12 +5,18 @@ Hosts have no defaults: where a dependency lives is deployment configuration.
 
 from pydantic import Field, FilePath, SecretStr, field_validator, model_validator
 
-from common_lib.settings import KeyedSecret, PostgresSettings, RabbitMQSettings
+from common_lib.settings import (
+    KekSettings,
+    KeyedSecret,
+    KeyStoreSettings,
+    PostgresSettings,
+    RabbitMQSettings,
+)
 
 DAY = 86_400
 
 
-class BackendSettings(PostgresSettings, RabbitMQSettings):
+class BackendSettings(PostgresSettings, RabbitMQSettings, KeyStoreSettings, KekSettings):
     """Everything the backend reads from its environment (`DB_USER`: the runtime role)."""
 
     db_pool_size: int = Field(default=5, ge=1, le=50)
@@ -24,12 +30,6 @@ class BackendSettings(PostgresSettings, RabbitMQSettings):
     redis_user: str
     redis_password: SecretStr
     redis_socket_timeout_seconds: float = Field(default=2.0, gt=0, le=60)
-
-    # The non-evicting key store for session keys, on its own network (ADR-0015).
-    keystore_host: str
-    keystore_port: int = Field(default=6379, ge=1, le=65535)
-    keystore_user: str
-    keystore_password: SecretStr
 
     # Each dependency must answer the readiness check within this time.
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
@@ -50,10 +50,8 @@ class BackendSettings(PostgresSettings, RabbitMQSettings):
     # Failed logins per client id and minute before it must wait.
     auth_login_failures_per_minute: int = Field(default=10, ge=1, le=1000)
 
-    # Session keys (ADR-0015): wrapped under the KEK in the key store; the previous KEK
-    # only unwraps, during a rotation (docs/runbooks/key-rotation.md).
-    kek_current: KeyedSecret
-    kek_previous: KeyedSecret | None = None
+    # Session keys (ADR-0015), wrapped under the KEK (`KekSettings`) in the key store
+    # (`KeyStoreSettings`).
     session_keys_per_minute: int = Field(default=10, ge=1, le=1000)
     # Minting one more revokes the user's oldest key.
     session_keys_max_active: int = Field(default=8, ge=1, le=64)
@@ -91,9 +89,7 @@ class BackendSettings(PostgresSettings, RabbitMQSettings):
             raise ValueError("stream_idle_timeout_s must be at least twice the heartbeat interval")
         return self
 
-    @field_validator(
-        "auth_signing_key_previous", "auth_pepper_previous", "kek_previous", mode="before"
-    )
+    @field_validator("auth_signing_key_previous", "auth_pepper_previous", mode="before")
     @classmethod
     def _empty_is_none(cls, value: object) -> object:
         return None if value == "" else value
