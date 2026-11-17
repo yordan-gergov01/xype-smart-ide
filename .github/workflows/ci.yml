@@ -58,7 +58,7 @@ jobs:
           python -m pip install -e . --no-deps
       - name: Requirements are compiled from the .in files
         run: |
-          for name in backend codegen dev; do
+          for name in backend indexer codegen dev; do
             uv pip compile --universal --generate-hashes --python-version 3.12 --quiet "requirements/${name}.in" -o "requirements/${name}.txt"
           done
           git diff --exit-code -- requirements/
@@ -153,6 +153,7 @@ jobs:
             source
             --config=osv-scanner.toml
             --lockfile=requirements.txt:server/requirements/backend.txt
+            --lockfile=requirements.txt:server/requirements/indexer.txt
             --lockfile=requirements.txt:server/requirements/dev.txt
             --lockfile=package-lock.json
 

@@ -15,7 +15,7 @@ Requirements: [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) · Plan: [docs/plan
 |---|---|
 | `proto/xype/v1/` | gRPC contracts (buf v2) |
 | `server/backend/` | Gateway (REST `/api/v1`, gRPC): `api/`, `grpc/` → `services/<feature>/` (orchestrator, router, retrieval, cache, tasks, agents, connectors, …) → `dal/<feature>/`; `main.py` is its composition root |
-| `server/llm/`, `server/indexer/` | Workers over RabbitMQ (LLM providers; embeddings + indexing); no database access |
+| `server/llm/`, `server/indexer/` | Workers over RabbitMQ (LLM providers; embeddings + indexing); no database access (the indexer reads session keys from the key store, `GET` only) |
 | `server/common_lib/` | Shared by all services: errors, domain types, settings, logging, models, schemas, message contract |
 | `server/migrations/`, `server/prompts/`, `server/evals/`, `server/tests/` | Alembic, versioned prompts, eval harness, tests (`unit/`, `integration/`, `architecture/`) |
 | `clients/xype-ai/` | VS Code extension: context engine, gRPC client, `ToolExecutor` |

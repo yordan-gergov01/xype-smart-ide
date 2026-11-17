@@ -32,6 +32,7 @@ pytestmark = pytest.mark.integration
 
 DEFAULT_PASSWORD = "test-only-default"
 BACKEND_PASSWORD = "test-only-not-a-secret"
+INDEXER_PASSWORD = "test-only-indexer"
 KEK = KekRing(Kek("kek-1", SecretBytes(bytes(range(32)))))
 
 
@@ -42,6 +43,8 @@ def keystore() -> Iterator[BackendSettings]:
         "REDIS_PASSWORD": DEFAULT_PASSWORD,
         "REDIS_BACKEND_USER": "backend",
         "REDIS_BACKEND_PASSWORD": BACKEND_PASSWORD,
+        "REDIS_INDEXER_USER": "indexer",
+        "REDIS_INDEXER_PASSWORD": INDEXER_PASSWORD,
     }
     with containers.redis(env, service="keystore") as container:
         yield make_settings(
@@ -228,3 +231,37 @@ async def test_revokes_on_a_full_store(store: KeyStore, client: Redis) -> None:
     finally:
         async for name in client.scan_iter("xype:sk:filler:*"):
             await client.delete(name)
+
+
+@pytest.fixture
+async def indexer(keystore: BackendSettings) -> AsyncIterator[Redis]:
+    settings = keystore.model_copy(
+        update={"keystore_user": "indexer", "keystore_password": SecretStr(INDEXER_PASSWORD)}
+    )
+    redis = create_keystore_client(settings)
+    yield redis
+    await redis.aclose()
+
+
+async def test_the_indexer_may_only_read_session_keys(
+    store: KeyStore, indexer: Redis, client: Redis
+) -> None:
+    """ADR-0015: the indexer's user runs `GET` on `xype:sk:*` and nothing else."""
+    record = contract.record(user_id=contract.unique("indexer-user"))
+    value = await contract.stored(store, record)
+    got, unwrapped = await RedisKeyStore(indexer, KEK).get(record.key_id)
+    assert (got, unwrapped.reveal()) == (record, value)
+    await client.set("xype:skb:indexer-key", "s-1")
+    refused = (
+        lambda: indexer.set(f"xype:sk:{record.key_id}", "x"),
+        lambda: indexer.delete(f"xype:sk:{record.key_id}"),
+        lambda: indexer.get("xype:skb:indexer-key"),
+        lambda: indexer.get("xype:other"),
+        lambda: indexer.keys("xype:*"),
+        lambda: indexer.scan(0),
+        lambda: indexer.eval("return 1", 0),
+        lambda: indexer.publish("xype:auth:revoked", "x"),
+    )
+    for command in refused:
+        with pytest.raises(NoPermissionError):
+            await command()

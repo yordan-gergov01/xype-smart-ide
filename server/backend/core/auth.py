@@ -26,9 +26,8 @@ from backend.services.auth import (
     SigningKey,
 )
 from common_lib.clock import Clock
-from common_lib.keystore import RedisKeyStore
-from common_lib.security import Kek, KekRing
-from common_lib.settings import KeyedSecret, parse_keyed_secret
+from common_lib.keystore import RedisKeyStore, kek_ring
+from common_lib.settings import parse_keyed_secret
 
 
 def peppers(settings: BackendSettings) -> PepperRing:
@@ -47,16 +46,6 @@ def access_token_issuer(settings: BackendSettings, clock: Clock) -> AccessTokenI
         ttl_seconds=settings.auth_access_ttl_s,
         clock=clock,
     )
-
-
-def _kek(value: KeyedSecret) -> Kek:
-    kek_id, material = parse_keyed_secret(value)
-    return Kek(kek_id, material)
-
-
-def kek_ring(settings: BackendSettings) -> KekRing:
-    previous = settings.kek_previous
-    return KekRing(_kek(settings.kek_current), _kek(previous) if previous else None)
 
 
 def auth_dependencies(

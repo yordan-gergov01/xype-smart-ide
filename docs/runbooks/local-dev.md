@@ -42,9 +42,12 @@ If you created the CA before Phase 2 slice 6a, run it once with `--rotate-ca`. A
 either lacks `keystore` in its name constraints or has the IP constraint gRPC cannot
 verify (ADR-0036); the generator says which.
 
-Phase 2 slice 8a added `RABBITMQ_INDEXER_USER` and `RABBITMQ_INDEXER_PASSWORD` (the indexer's
-broker user). Copy both from `deploy/env/.env.example` into an existing `deploy/env/.env`; the broker
-refuses to start without them, and it reads its users, permissions and queues at boot.
+Phase 2 slices 8a and 8b added the indexer's users: `RABBITMQ_INDEXER_USER` and
+`RABBITMQ_INDEXER_PASSWORD` (broker), `KEYSTORE_INDEXER_USER` and `KEYSTORE_INDEXER_PASSWORD`
+(key store, `GET` only). Copy them from `deploy/env/.env.example` into an existing `deploy/env/.env`; the broker and the
+key store refuse to start without them, and both read their users at boot. After the
+first start with the indexer, check its memory against the 4 GB budget (R12):
+`docker stats --no-stream`.
 
 Generate the keys once (auth: ADR-0014, KEK: ADR-0015) and paste each value into
 `deploy/env/.env`. The stack refuses to start while `AUTH_SIGNING_KEY_CURRENT`,

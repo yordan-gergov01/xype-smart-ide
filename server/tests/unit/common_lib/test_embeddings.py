@@ -10,7 +10,12 @@ from support.contracts import embedder as contract
 from support.embeddings import FakeEmbedder
 
 from common_lib.domain import ModelRef
-from common_lib.embeddings import Embedder, EmbeddingError, EmbeddingUnavailableError
+from common_lib.embeddings import (
+    Embedder,
+    EmbeddingError,
+    EmbeddingRefusedError,
+    EmbeddingUnavailableError,
+)
 from common_lib.embeddings.ollama import OllamaEmbedder
 from common_lib.secret_bytes import SecretBytes, SecretWipedError
 
@@ -242,3 +247,24 @@ async def test_timeout_bounds_the_whole_request(make_ollama: Make) -> None:
         assert raised.value.__context__ is None
     finally:
         await client.aclose()
+
+
+@pytest.mark.parametrize(
+    ("status", "error"),
+    [
+        (500, EmbeddingUnavailableError),
+        (503, EmbeddingUnavailableError),
+        (429, EmbeddingUnavailableError),
+        (404, EmbeddingUnavailableError),  # the model is not there: the deployment's fault
+        (403, EmbeddingUnavailableError),
+        (400, EmbeddingRefusedError),
+        (413, EmbeddingRefusedError),
+        (422, EmbeddingRefusedError),
+    ],
+)
+async def test_overload_is_temporary_and_a_refusal_is_not(
+    make_ollama: Make, status: int, error: type[EmbeddingError]
+) -> None:
+    embedder = make_ollama(lambda _request: httpx.Response(status))
+    with pytest.raises(error):
+        await embedder.embed_documents([SecretBytes(b"x")])

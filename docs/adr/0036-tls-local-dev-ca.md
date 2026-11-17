@@ -81,6 +81,7 @@ Chosen option: **1**.
   host-name check and the name constraints on a loopback TLS server.
 - **Not covered**:
   - Ollama stays on HTTP on the internal `models` network (ADR-0002).
+  - The indexer's `/healthz`, `/readyz` and `/metrics` (port 9100) are HTTP on internal networks; they carry no payload, so the indexer needs no server certificate (Phase 2 slice 8b).
   - The OTel collector's metrics and the Prometheus and Grafana UIs stay HTTP; they carry
     no payloads. The backend's `/metrics` is scraped over verified HTTPS.
   - RabbitMQ's Erlang distribution (25672) and epmd (4369) stay plaintext, protected by

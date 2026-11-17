@@ -12,10 +12,10 @@ from support.backend import make_settings
 from support.contracts import repositories as contract
 from support.repositories import FakeRepositoryStore
 
-from backend.core.auth import kek_ring
 from backend.services.repositories import RepositoryAdmin, UnknownTeamError, without_credentials
 from common_lib.clock import SystemClock
 from common_lib.errors import InvalidValueError
+from common_lib.keystore import kek_ring
 from common_lib.remote_urls import REMOTE_URL_FORM, SCP_FORM
 from common_lib.repositories import DuplicateRepositoryError
 from common_lib.security import DecryptionError, KekPurpose, repository_key_aad, unwrap_key

@@ -24,10 +24,17 @@ from urllib.parse import urlsplit
 import httpx
 
 from common_lib.domain import ModelRef
-from common_lib.embeddings import EmbeddingError, EmbeddingUnavailableError, query_input
+from common_lib.embeddings import (
+    EmbeddingError,
+    EmbeddingRefusedError,
+    EmbeddingUnavailableError,
+    query_input,
+)
 from common_lib.secret_bytes import SecretBytes
 
 EMBED_PATH = "/api/embed"
+# Statuses that refuse this input itself (bad request, too large, unprocessable).
+_INPUT_REFUSED = frozenset({400, 413, 422})
 # Ollama's cloud models are paid remote inference (ADR-0034, tools/paid_api_hosts.txt).
 CLOUD_HOST = "ollama.com"
 
@@ -95,8 +102,13 @@ class OllamaEmbedder:
             response = None
         if response is None:
             raise EmbeddingUnavailableError
-        if response.status_code != httpx.codes.OK:
-            raise EmbeddingError(f"embedding server answered {response.status_code}")
+        status = response.status_code
+        if status in _INPUT_REFUSED:
+            raise EmbeddingRefusedError(f"embedding server answered {status}")
+        if status != httpx.codes.OK:
+            # Overload, failure, a missing model or no access: the deployment's fault,
+            # not this input's, so worth trying again.
+            raise EmbeddingUnavailableError(f"embedding server answered {status}")
         return self._vectors(response, expected=len(inputs))
 
     def _vectors(self, response: httpx.Response, *, expected: int) -> list[list[float]]:
