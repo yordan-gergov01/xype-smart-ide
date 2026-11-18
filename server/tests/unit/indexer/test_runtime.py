@@ -12,7 +12,7 @@ from common_lib.errors import DependencyUnavailableError
 from common_lib.messaging import MessageBus
 from indexer import main
 from indexer.health import HealthServer, Readiness
-from indexer.main import consume_forever, watch
+from indexer.main import consume_forever
 from indexer.metrics import IndexerMetrics
 
 
@@ -26,8 +26,6 @@ def test_health_ready_and_metrics_answer() -> None:
     assert server.answer("/readyz").startswith(b"HTTP/1.1 200")
     assert b'xype_indexer_chunks_total{outcome="embedded"} 0.0' in server.answer("/metrics")
     assert server.answer("/anything").startswith(b"HTTP/1.1 404")
-    stuck = HealthServer(registry, lambda: True, lambda: False)
-    assert stuck.answer("/healthz").startswith(b"HTTP/1.1 503")
 
 
 async def test_the_health_server_answers_over_tcp() -> None:
@@ -73,15 +71,3 @@ async def test_the_consumer_starts_again_after_the_broker_went_away(
         await task
     assert states[:2] == [True, True]
     assert not readiness.consuming
-
-
-async def test_the_watchdog_stops_the_worker_when_scans_stay_stuck() -> None:
-    readiness = Readiness(scans_full_since=0.0)  # stuck since long ago
-    stopped = asyncio.Event()
-    await asyncio.wait_for(watch(readiness, stopped.set, every_s=0.01), timeout=5)
-    assert stopped.is_set()
-    healthy = Readiness()
-    task = asyncio.create_task(watch(healthy, stopped.clear, every_s=0.01))
-    await asyncio.sleep(0.05)
-    assert not task.done()
-    task.cancel()

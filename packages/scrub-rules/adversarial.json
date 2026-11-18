@@ -1,0 +1,90 @@
+{
+  "description": "ReDoS check of rules.json (ADR-0019): each rule alone must scan every input built here within max_seconds. An input is a trigger (stored as fragments, joined) followed by a pump, in each shape, cut to size_bytes. Every rule id, and the entropy rule, needs at least one trigger.",
+  "size_bytes": 65536,
+  "max_seconds": 1.0,
+  "shapes": ["trigger_then_pump", "trigger_and_40_pumps_repeated", "trigger_and_pump_repeated"],
+  "pumps": [
+    "a",
+    "A",
+    "0",
+    " ",
+    "\t",
+    "=",
+    "\"",
+    "'",
+    ":",
+    "-",
+    ".",
+    "/",
+    "_",
+    "@",
+    "|",
+    "\n",
+    "a0",
+    "a.",
+    "a ",
+    "0 ",
+    "A0+/"
+  ],
+  "triggers": {
+    "private-key": [
+      ["-----BEGIN RSA ", "PRIVATE KEY-----\n"],
+      ["-----", "END"]
+    ],
+    "gcp-private-key-id": [
+      ["\"private_key", "_id\""],
+      ["\"private_key", "_id\": \""]
+    ],
+    "aws-access-key-id": [
+      ["AK", "IA"],
+      [" AS", "IA"]
+    ],
+    "azure-connection-key": [
+      ["Account", "Key="],
+      ["SharedAccess", "Key="]
+    ],
+    "github-token": [
+      ["gh", "p_"],
+      ["github", "_pat_"]
+    ],
+    "gitlab-token": [["glp", "at-"]],
+    "slack-token": [["xo", "xb-"]],
+    "stripe-key": [["sk_", "live_"]],
+    "llm-api-key": [
+      ["sk", "-"],
+      ["sk-or", "-v1-"]
+    ],
+    "jwt": [
+      ["ey", "J"],
+      ["eyJaaaaaaaa", ".eyJ"]
+    ],
+    "bearer-token": [
+      ["Bearer", " "],
+      ["Token", "\t"]
+    ],
+    "url-userinfo": [
+      ["https", "://"],
+      ["a", "://"]
+    ],
+    "secret-assignment": [
+      ["pass", "word"],
+      ["pass", "word = "],
+      ["tok", "en: a | b"],
+      ["sec", "ret x"]
+    ],
+    "dockerfile-secret": [
+      ["ENV PASS", "WORD "],
+      ["ARG ", "KEY "]
+    ],
+    "email": [
+      ["a", "@"],
+      ["a", "@b."],
+      ["a.b", "@c"]
+    ],
+    "phone": [
+      ["+", "1"],
+      ["+1", " 2"]
+    ],
+    "high-entropy": [["="], ["\""], ["= ", "'"]]
+  }
+}
