@@ -67,7 +67,7 @@ def test_no_rule_backtracks_on_adversarial_input(rule_id: str) -> None:
 def test_the_check_catches_a_rule_that_backtracks() -> None:
     """A bounded rule of the portable subset can still be quadratic: this one is."""
     slow = dataclasses.replace(
-        RULES.rules[0], rule_id="slow", pattern=re.compile("[a-z]{0,8192}x"), keywords=()
+        RULES.rules[0], rule_id="slow", pattern=re.compile("[a-z]{0,20000}x"), keywords=()
     )
     rules = dataclasses.replace(RULES, rules=(slow,), budget_ms_per_mib=1e9)
     entropy = dataclasses.replace(RULES.entropy, keywords=(_NEVER,))

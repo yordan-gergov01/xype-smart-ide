@@ -102,7 +102,7 @@ The scrubber runs over the whole file and preserves line count. Chunking (ADR-00
   - already-scrubbed text;
   - pathological inputs (an unterminated `BEGIN`, long runs of one character) with a time budget.
 - The vitest and pytest suites must give identical output for every case.
-- A ReDoS check (`server/tests/unit/common_lib/test_scrub_redos.py`, in CI with the unit tests) runs each rule alone on the adversarial inputs of `packages/scrub-rules/adversarial.json`. Each input is a trigger for that rule followed by a pump character, in three shapes, cut to 64 KiB, and each must scan in under 1 s. Every rule id needs triggers there, so a new rule cannot skip the check. A self-test shows that the check catches a bounded but quadratic pattern (`[a-z]{0,8192}x`). Measured on 2026-11-17: the slowest input takes about 0.17 s (the email rule); 1 MiB of the worst shape takes about 0.45 s, linear.
+- A ReDoS check (`server/tests/unit/common_lib/test_scrub_redos.py`, in CI with the unit tests) runs each rule alone on the adversarial inputs of `packages/scrub-rules/adversarial.json`. Each input is a trigger for that rule followed by a pump character, in three shapes, cut to 64 KiB, and each must scan in under 1 s. Every rule id needs triggers there, so a new rule cannot skip the check. A self-test shows that the check catches a bounded but quadratic pattern (`[a-z]{0,20000}x`). Measured on 2026-11-17: the slowest input takes about 0.17 s (the email rule); 1 MiB of the worst shape takes about 0.45 s, linear.
 - A test that a denied path never produces a `ChunkRef`.
 - A privacy test that a chunk with a planted secret never reaches the `Embedder` fake or the mock provider.
 
