@@ -55,6 +55,10 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Scrub corpus**: the shared, synthetic test cases (`packages/scrub-rules/corpus.json`) that both scrubber implementations must reproduce exactly.
 
+**Scan process**: a child process of the indexer that runs the server's re-check on one chunk at a time, and is killed when a scan runs past its time (`indexer.scan`, ADR-0019).
+
+**ReDoS check**: the test that runs each scrub rule alone on adversarial inputs (`packages/scrub-rules/adversarial.json`) under a time bound, so no rule backtracks badly (ADR-0019).
+
 **Session stream**: the persistent bidirectional gRPC connection between one IDE window and the server. It lives at most as long as its access token and closes with a `StreamError` (ADR-0013).
 
 **Session gate**: the session service's checks on a stream: the token when it opens, the session key and repositories at Hello, and the rate limit and repositories on every later message (ADR-0013).

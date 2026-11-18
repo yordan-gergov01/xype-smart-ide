@@ -352,6 +352,9 @@ services:
     tmpfs:
       - /tmp:uid=10001,gid=10001,noexec,nosuid,nodev
     pids_limit: 64
+    # No core files: a crash must not write a chunk or a key to disk (ADR-0019).
+    ulimits:
+      core: 0
     networks:
       - keys
       - messaging

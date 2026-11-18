@@ -5,11 +5,8 @@ outage is retried. Nothing it emits holds the plaintext."""
 
 import base64
 import json
-import threading
-import time
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 import structlog
@@ -17,8 +14,10 @@ from opentelemetry.sdk.trace import TracerProvider
 from prometheus_client import CollectorRegistry
 from support.bus import FakeBus
 from support.clock import FakeClock
+from support.contracts.scanner import RULES_FILE, planted_secret
 from support.embeddings import FakeEmbedder
 from support.keystore import FakeKeyStore
+from support.scanner import InlineScanner
 
 from common_lib.domain import ChunkRef
 from common_lib.embeddings import EmbeddingError, EmbeddingRefusedError
@@ -34,27 +33,19 @@ from common_lib.security import (
     load_rules,
     new_key,
 )
-from indexer.handler import MAX_CHUNK_BYTES, SCRUB_WORKERS, ChunkIndexer
+from indexer.handler import MAX_CHUNK_BYTES, ChunkIndexer
 from indexer.health import Readiness
 from indexer.metrics import IndexerMetrics
+from indexer.scan import Scanner, ScanVerdict
 
-RULES_DIR = Path(__file__).resolve().parents[4] / "packages" / "scrub-rules"
 NOW = datetime(2026, 11, 14, 9, 0, tzinfo=UTC)
 MARKER = "def secret_sauce_7f3a():\n    return 42\n"
 
 
-def _planted_secret() -> str:
-    """A corpus input the rules must change; stored there as fragments."""
-    corpus = json.loads((RULES_DIR / "corpus.json").read_text("utf-8"))
-    for case in corpus["cases"]:
-        text, expected = "".join(case["input"]), "".join(case["expected"])
-        if text != expected:
-            return text
-    raise AssertionError("the corpus has no case with a finding")
-
-
 class World:
-    def __init__(self, *, embedder: FakeEmbedder | None = None) -> None:
+    def __init__(
+        self, *, embedder: FakeEmbedder | None = None, scanner: Scanner | None = None
+    ) -> None:
         self.keys = FakeKeyStore(FakeClock(NOW))
         self.bus = FakeBus()
         self.embedder = embedder or FakeEmbedder()
@@ -62,7 +53,7 @@ class World:
         self.readiness = Readiness(consuming=True)
         self.indexer = ChunkIndexer(
             self.keys,
-            SecretScrubber(load_rules(RULES_DIR / "rules.json")),
+            scanner or InlineScanner(SecretScrubber(load_rules(RULES_FILE))),
             self.embedder,
             self.bus,
             metrics=IndexerMetrics.create(self.registry),
@@ -181,7 +172,7 @@ async def test_a_planted_secret_is_rejected_before_the_embedder() -> None:
 
     world = World(embedder=CountingEmbedder())
     await world.store_key()
-    assert await world.handle(world.job(_planted_secret())) is None
+    assert await world.handle(world.job(planted_secret())) is None
     result = decode_result(world.bus.queues[VECTORS][0].body)
     assert (result.outcome, getattr(result, "reason", None)) == ("rejected", "secret_found")
     assert calls == []
@@ -253,43 +244,15 @@ def test_the_job_carries_only_ciphertext() -> None:
     assert "secret_sauce" not in base64.urlsafe_b64decode(body["ciphertext"]).decode("latin-1")
 
 
-async def test_a_scrub_that_does_not_finish_is_unscannable(monkeypatch: pytest.MonkeyPatch) -> None:
-    world = World()
+async def test_an_unscannable_verdict_is_a_rejection() -> None:
+    """A scan killed past its time (`indexer.scan`) settles the chunk, fail closed."""
+
+    class Unscannable:
+        async def scan(self, chunk: bytes) -> ScanVerdict:
+            return "unscannable"
+
+    world = World(scanner=Unscannable())
     await world.store_key()
-    monkeypatch.setattr("indexer.handler.SCRUB_TIMEOUT_S", 0.05)
-
-    def stuck(_: str) -> object:
-        time.sleep(0.5)  # a scan that runs far past its budget
-        raise AssertionError("not reached in time")
-
-    monkeypatch.setattr(world.indexer._scrubber, "scrub", stuck)
     assert await world.handle(world.job(MARKER)) is None
     result = decode_result(world.bus.queues[VECTORS][0].body)
     assert getattr(result, "reason", None) == "unscannable"
-
-
-async def test_busy_scan_threads_mean_a_retry_not_a_rejection(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Chunks stuck past their time hold their threads; the next chunk is not blamed."""
-    world = World()
-    await world.store_key()
-    monkeypatch.setattr("indexer.handler.SCRUB_TIMEOUT_S", 0.05)
-    release = threading.Event()
-
-    def stuck(_: str) -> object:
-        release.wait(5)
-        raise AssertionError("released")
-
-    monkeypatch.setattr(world.indexer._scrubber, "scrub", stuck)
-    for _ in range(SCRUB_WORKERS):
-        await world.handle(world.job(MARKER))  # each runs past its time: unscannable
-    with pytest.raises(RetryableError):
-        await world.handle(world.job(MARKER))
-    assert world.readiness.healthy()  # not yet stuck for long
-    since = world.readiness.scans_full_since
-    assert since is not None
-    assert not world.readiness.healthy(now=since + 31)
-    release.set()
-    reasons = [getattr(decode_result(m.body), "reason", None) for m in world.bus.queues[VECTORS]]
-    assert reasons == ["unscannable"] * SCRUB_WORKERS

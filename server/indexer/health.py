@@ -3,7 +3,6 @@ standard library: the indexer needs no web framework. They carry no payload, so 
 HTTP on the internal networks only (ADR-0036, like the OTel collector's metrics)."""
 
 import asyncio
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -22,39 +21,22 @@ def _response(status: str, body: bytes, content_type: str = "text/plain") -> byt
     return head.encode("ascii") + body
 
 
-# Every scan thread stuck for this long: unhealthy, and the watchdog in `indexer.main`
-# ends the process so the container restarts (until scans can be killed; ADR-0015).
-STUCK_SCANS_S = 30.0
-
-
 @dataclass
 class Readiness:
     """Ready while consuming and while the last chunk did not find a store or the model
-    server down (a retry clears it on the next success). Healthy unless every scan
-    thread has been stuck for `STUCK_SCANS_S`."""
+    server down (a retry clears it on the next success)."""
 
     consuming: bool = False
     dependencies_ok: bool = True
-    scans_full_since: float | None = None  # monotonic seconds
 
     def ready(self) -> bool:
         return self.consuming and self.dependencies_ok
 
-    def healthy(self, now: float | None = None) -> bool:
-        since = self.scans_full_since
-        return since is None or (now or time.monotonic()) - since < STUCK_SCANS_S
-
 
 class HealthServer:
-    def __init__(
-        self,
-        registry: CollectorRegistry,
-        ready: Callable[[], bool],
-        healthy: Callable[[], bool] = lambda: True,
-    ) -> None:
+    def __init__(self, registry: CollectorRegistry, ready: Callable[[], bool]) -> None:
         self._registry = registry
         self._ready = ready
-        self._healthy = healthy
 
     async def start(self, address: str) -> asyncio.Server:
         host, _, port = address.rpartition(":")
@@ -62,9 +44,7 @@ class HealthServer:
 
     def answer(self, path: str) -> bytes:
         if path == "/healthz":
-            if self._healthy():
-                return _response("200 OK", b"ok\n")
-            return _response("503 Service Unavailable", b"stuck\n")
+            return _response("200 OK", b"ok\n")
         if path == "/readyz":
             if self._ready():
                 return _response("200 OK", b"ready\n")

@@ -4,13 +4,12 @@ decrypt in memory, check again for secrets, embed, wipe, publish.
 A chunk the check rejects is reported as `RejectedChunk` (it settles the sync); a job
 that cannot be opened (an unknown, expired or foreign key, a failed tag) is
 dead-lettered with a fixed reason. Plaintext lives only in `SecretBytes`, wiped on every
-path; the `str` the scrubber needs cannot be wiped (`common_lib/secret_bytes.py`).
+path. The scan gets one copy (`reveal`), which cannot be wiped, and its child
+process another (`indexer.scan`).
 Logs, spans and metrics carry ids, counts and fixed outcomes only.
 """
 
-import asyncio
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 import structlog
@@ -41,20 +40,15 @@ from common_lib.security import (
     KeyStore,
     NonceError,
     PayloadContext,
-    ScrubTimeoutError,
-    SecretScrubber,
 )
 from common_lib.vectors import check_vector
 from indexer.health import Readiness
 from indexer.metrics import IndexerMetrics
+from indexer.scan import Scanner
 
 logger = structlog.get_logger(__name__)
 
 # A chunk is at most 64 KiB of scrubbed text (ADR-0019); larger is refused unchecked.
-# A 64 KiB chunk scans in tens of milliseconds; far past that it is refused unchecked.
-SCRUB_TIMEOUT_S = 2.0
-# Scans run on their own threads, at most this many at once (stuck ones included).
-SCRUB_WORKERS = 2
 MAX_CHUNK_BYTES = 64 * 1024
 type Rejection = Literal["secret_found", "too_large", "unscannable", "unembeddable"]
 # The indexer receives what clients send; it never encrypts.
@@ -73,7 +67,7 @@ class ChunkIndexer:
     def __init__(
         self,
         keys: KeyStore,
-        scrubber: SecretScrubber,
+        scanner: Scanner,
         embedder: Embedder,
         bus: MessageBus,
         *,
@@ -82,10 +76,8 @@ class ChunkIndexer:
         readiness: Readiness,
     ) -> None:
         self._readiness = readiness
-        self._scan_pool = ThreadPoolExecutor(SCRUB_WORKERS, thread_name_prefix="scrub")
-        self._scans = 0  # running, including those past their time
         self._keys = keys
-        self._scrubber = scrubber
+        self._scanner = scanner
         self._embedder = embedder
         self._bus = bus
         self._metrics = metrics
@@ -180,36 +172,12 @@ class ChunkIndexer:
             vector=list(vector),
         )
 
-    def _scan_done(self, _: object) -> None:
-        self._scans -= 1
-        self._readiness.scans_full_since = None
-
     async def _check(self, plaintext: SecretBytes) -> Rejection | None:
         """The server's re-check (ADR-0019): None when clean, else the fixed reason."""
         if len(plaintext) > MAX_CHUNK_BYTES:
             return "too_large"
-        try:
-            text = plaintext.reveal().decode("utf-8")
-        except UnicodeDecodeError:
-            return "unscannable"
-        if self._scans >= SCRUB_WORKERS:
-            # Every scan thread is busy with an earlier chunk: not this chunk's fault, so
-            # it is tried again later instead of being settled as unscannable.
-            if self._readiness.scans_full_since is None:
-                self._readiness.scans_full_since = time.monotonic()
-            raise RetryableError("no scan thread is free")
-        self._scans += 1
-        future = asyncio.get_running_loop().run_in_executor(
-            self._scan_pool, self._scrubber.scrub, text
-        )
-        future.add_done_callback(self._scan_done)
-        try:
-            # The scrubber's own budget is checked after the scan; this bound settles the
-            # chunk even when a pathological input keeps its thread busy.
-            result = await asyncio.wait_for(asyncio.shield(future), SCRUB_TIMEOUT_S)
-        except (ScrubTimeoutError, TimeoutError):
-            return "unscannable"
-        return None if result.clean else "secret_found"
+        verdict = await self._scanner.scan(plaintext.reveal())
+        return None if verdict == "clean" else verdict
 
 
 def _open(job: ChunkJob, key: SecretBytes) -> SecretBytes:

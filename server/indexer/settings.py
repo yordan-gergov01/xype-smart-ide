@@ -19,6 +19,11 @@ class IndexerSettings(RabbitMQSettings, KeyStoreSettings, KekSettings):
     embedding_timeout_s: float = Field(default=60.0, gt=0, le=600)
     # The shared scrub rules (ADR-0019), copied into the image.
     scrub_rules_file: FilePath
+    # A 64 KiB chunk scans in tens of milliseconds; a scan still running after this is
+    # killed and the chunk settled as unscannable (ADR-0019). Each scan process takes
+    # about 31 MiB of the container's memory.
+    scan_timeout_s: float = Field(default=2.0, gt=0, le=10)
+    scan_workers: int = Field(default=2, ge=1, le=4)
     # Unacknowledged chunks this worker holds (it handles one at a time).
     prefetch: int = Field(default=4, ge=1, le=64)
     # Health and metrics over HTTP inside the internal networks: they carry no payload
