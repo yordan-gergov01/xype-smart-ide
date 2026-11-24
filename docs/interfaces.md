@@ -209,7 +209,8 @@ class MerkleIndex(Protocol):
         changed leaves are stored pending (slice 8c2)."""
     async def settle(self, result: LeafResult) -> Settled:
         """The indexer's result for one pending leaf (slice 8c2): settled,
-        already_settled or not_pending."""
+        already_settled or not_pending. The vector consumer refuses a vector of
+        another model than the backend's before settling (wrong_model, slice 8c3a)."""
 
 @dataclass(frozen=True, slots=True)
 class LeafResult:  # common_lib/merkle.py
@@ -224,7 +225,8 @@ class MerkleSyncs:
     async def start(self, repository_id: UUID, client_root: str | None) -> list[SyncStep]: ...
     async def poll(self) -> list[SyncStep]: ...
     async def report(self, report: TreeReport) -> list[SyncStep]: ...
-# SyncStep = SyncRequest | SyncDelta | SyncDone
+# SyncStep = SyncRequest | SyncDelta | SyncDone; a SyncDelta goes out only after the apply
+# that stored its leaves pending committed, and ends the sync (slice 8c3a).
 ```
 
 ## cache

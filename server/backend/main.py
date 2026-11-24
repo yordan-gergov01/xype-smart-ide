@@ -120,8 +120,7 @@ def create_app(
         gate, streams, syncs=syncs, clock=clock, metrics=registry, tracer=tracer
     )
     closers = (database.dispose, redis.aclose, keystore.aclose)
-    results = VectorResults(merkle, metrics=ResultMetrics.create(registry), tracer=tracer)
-    consumer = _results_consumer(settings, indexing.bus, results)
+    consumer = _results_consumer(settings, indexing.bus, merkle, registry, tracer)
     app = FastAPI(
         title="XYPE backend",
         lifespan=_lifespan(
@@ -144,10 +143,15 @@ def create_app(
 def _results_consumer(
     settings: BackendSettings,
     connect: Callable[[], Awaitable[MessageBus]] | None,
-    results: VectorResults,
+    merkle: MerkleIndex,
+    registry: CollectorRegistry,
+    tracer: Tracer,
 ) -> Callable[[], Coroutine[Any, Any, None]]:  # reason: Any - a coroutine's send type
-    """Consumes `index.vectors` as the backend's broker user, again after an outage."""
+    """Consumes `index.vectors` as the backend's broker user, again after an outage; only
+    vectors of the backend's embedding model are settled."""
     connect = connect or (lambda: connect_bus(settings))
+    metrics = ResultMetrics.create(registry)
+    results = VectorResults(merkle, model=settings.embedding_model, metrics=metrics, tracer=tracer)
 
     async def consume(bus: MessageBus) -> None:
         await bus.consume(VECTORS, results.handle, prefetch=settings.index_results_prefetch)

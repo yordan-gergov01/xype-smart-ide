@@ -3,7 +3,9 @@ of the indexer settles one pending leaf through `MerkleIndex.settle`.
 
 A result for a leaf that is no longer pending with its hash (deleted or replaced by a
 later sync, or never this repository's) is dead-lettered as `not_pending`; a repeated
-delivery of a settled one is acknowledged. A store outage or a held lock is a retry.
+delivery of a settled one is acknowledged. A vector of another model than the backend's
+is dead-lettered as `wrong_model` and its leaf stays pending: stored, it would never be
+found nor embedded again (slice 8c3a). A store outage or a held lock is a retry.
 Logs, spans and metrics carry ids, counts and fixed outcomes only; never a vector.
 """
 
@@ -14,6 +16,7 @@ from opentelemetry.trace import Tracer
 from prometheus_client import CollectorRegistry, Counter
 
 from backend.services.indexing import MerkleIndex
+from common_lib.domain import ModelRef
 from common_lib.errors import InvalidValueError
 from common_lib.index_messages import decode_result
 from common_lib.merkle import Settled
@@ -22,7 +25,13 @@ from common_lib.messaging import Delivery
 logger = structlog.get_logger(__name__)
 
 # What happened to a result: a `Settled` value, or `malformed`.
-OUTCOMES: tuple[Settled | str, ...] = ("settled", "already_settled", "not_pending", "malformed")
+OUTCOMES: tuple[Settled | str, ...] = (
+    "settled",
+    "already_settled",
+    "not_pending",
+    "wrong_model",
+    "malformed",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,8 +52,11 @@ class ResultMetrics:
 
 
 class VectorResults:
-    def __init__(self, index: MerkleIndex, *, metrics: ResultMetrics, tracer: Tracer) -> None:
+    def __init__(
+        self, index: MerkleIndex, *, model: ModelRef, metrics: ResultMetrics, tracer: Tracer
+    ) -> None:
         self._index = index
+        self._model = model
         self._metrics = metrics
         self._tracer = tracer
 
@@ -58,14 +70,25 @@ class VectorResults:
             try:
                 result = decode_result(delivery.body).leaf_result()
                 span.set_attribute("xype.repository_id", str(result.chunk.repository_id))
-                # The store refuses a value it cannot hold (a CHECK) as invalid too.
-                outcome: str = await self._index.settle(result)
+                outcome: str
+                if result.embedded is not None and result.embedded.model != self._model:
+                    outcome = "wrong_model"
+                else:
+                    # The store refuses a value it cannot hold (a CHECK) as invalid too.
+                    outcome = await self._index.settle(result)
             except InvalidValueError:
                 outcome = "malformed"
             span.set_attribute("xype.outcome", outcome)
             self._metrics.results.labels(outcome).inc()
             # One line per result: routine outcomes only at debug (the counter has them).
             routine = outcome in ("settled", "already_settled")
-            log = logger.debug if routine else logger.info
+            # Another model is a configuration error (the two services disagree), not routine.
+            log = (
+                logger.debug
+                if routine
+                else logger.warning
+                if outcome == "wrong_model"
+                else logger.info
+            )
             log("index.result.handled", outcome=outcome, attempt=delivery.attempt)
             return None if routine else outcome

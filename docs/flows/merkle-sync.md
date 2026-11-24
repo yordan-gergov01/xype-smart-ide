@@ -35,7 +35,7 @@ sequenceDiagram
     end
 ```
 
-The order above is the amended design (ADR-0018, slice 8c2): leaves needing a vector are persisted as pending, so nothing waits in a stream's memory. The store and the `index.vectors` consumer implement it from slice 8c2; the stream applies before the uploads from slice 8c3 (until then the sync still holds its update).
+The order above is the amended design (ADR-0018, slice 8c2): leaves needing a vector are persisted as pending, so nothing waits in a stream's memory. The store and the `index.vectors` consumer implement it from slice 8c2; the stream applies before it sends the delta from slice 8c3a, and the gateway accepts `ChunkUpload` from slice 8c3b.
 
 ## Failure handling
 
@@ -45,6 +45,7 @@ The order above is the amended design (ADR-0018, slice 8c2): leaves needing a ve
 | Indexer fails for some chunks | Their leaves stay pending; the server requests them again after the settle window (slice 8c3) |
 | A result arrives for content a later sync replaced or deleted, or for another repository | It writes nothing and is dead-lettered `not_pending` (it waits for any apply in progress first) |
 | The same result is delivered twice | It settles once; the repeat is acknowledged |
+| A vector of another embedding model arrives | It writes nothing, is dead-lettered `wrong_model` (logged as a warning: the backend and indexer disagree), and its leaf stays pending for the re-request |
 | A chunk fails the server scrub re-check | It settles as rejected, is stored as a leaf without a vector and is not uploaded again |
 | Session key expired before indexing | The chunk goes to the dead-letter queue with a fixed reason; the next sync re-uploads it |
 | Report above 2 000 nodes or upload above 256 chunks | Paged (`last_page`); nothing is compared or deleted before a level's last page |

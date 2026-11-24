@@ -57,7 +57,7 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Pending leaf**: a Merkle leaf the server stored whose chunk has no result yet; the indexer's result settles it as `indexed` or `rejected` (ADR-0018, slice 8c2).
 
-**Settle**: to apply the indexer's result to its pending leaf, in one transaction ordered against `apply`; a result for a leaf that is no longer pending with its hash is `not_pending` (ADR-0018).
+**Settle**: to apply the indexer's result to its pending leaf, in one transaction ordered against `apply`; a result for a leaf that is no longer pending with its hash is `not_pending`, and a vector of another embedding model is `wrong_model` and leaves the leaf pending (ADR-0018).
 
 **Scan process**: a child process of the indexer that runs the server's re-check on one chunk at a time, and is killed when a scan runs past its time (`indexer.scan`, ADR-0019).
 

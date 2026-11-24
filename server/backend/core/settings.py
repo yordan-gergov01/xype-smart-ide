@@ -6,6 +6,7 @@ Hosts have no defaults: where a dependency lives is deployment configuration.
 from pydantic import Field, FilePath, SecretStr, field_validator, model_validator
 
 from common_lib.settings import (
+    EmbeddingModelSettings,
     KekSettings,
     KeyedSecret,
     KeyStoreSettings,
@@ -16,7 +17,9 @@ from common_lib.settings import (
 DAY = 86_400
 
 
-class BackendSettings(PostgresSettings, RabbitMQSettings, KeyStoreSettings, KekSettings):
+class BackendSettings(
+    PostgresSettings, RabbitMQSettings, KeyStoreSettings, KekSettings, EmbeddingModelSettings
+):
     """Everything the backend reads from its environment (`DB_USER`: the runtime role)."""
 
     db_pool_size: int = Field(default=5, ge=1, le=50)

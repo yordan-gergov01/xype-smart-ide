@@ -35,6 +35,7 @@ REASONS = frozenset(
         "decryption_failed",
         "handler_error",
         "not_pending",
+        "wrong_model",
         "redelivery_limit",
     }
 )

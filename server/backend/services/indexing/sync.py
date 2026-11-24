@@ -4,8 +4,10 @@ Level by level, the server asks for the children of the nodes whose hash differs
 its own. Each level is checked against the hash the client reported one level up (the
 root first), so a skipped parent, a dropped page or a tree that changed mid-sync can
 never be taken for deletions. When only leaves are left, the changes are applied at once
-(`MerkleIndex.apply`, compare-and-set on the root) or, when chunks must be uploaded, sent
-as a `SyncDelta` and held until they settle (slice 8). Ids and counts only are logged.
+(`MerkleIndex.apply`, compare-and-set on the root): new or changed leaves are stored
+`pending`. Only after that commit are the chunks to upload sent as `SyncDelta` pages, so
+nothing waits in the stream's memory for a vector (ADR-0018 amendment, slice 8c3a); the
+sync ends either way. Ids and counts only are logged.
 
 Every node a sync holds is counted against the stream's share and a `NodeBudget` that
 all streams of the process share, and released when the sync ends or the stream closes.
@@ -91,7 +93,6 @@ class _Sync:
     stored: list[MerkleNodeUpdate] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
     upload: list[ChunkRef] = field(default_factory=list)
-    pending: MerkleUpdate | None = None  # waits for uploads (slice 8)
 
 
 class MerkleSyncs:
@@ -149,7 +150,7 @@ class MerkleSyncs:
     async def report(self, report: TreeReport) -> list[SyncStep]:
         self._purge()
         sync = self._syncs.get(report.repository_id)
-        if sync is None or sync.pending is not None or report.request_id != sync.request_id:
+        if sync is None or report.request_id != sync.request_id:
             raise RefusedError(SYNC_UNKNOWN)
         self._accept(sync, report)
         if not report.last_page:
@@ -207,9 +208,6 @@ class MerkleSyncs:
             update = MerkleUpdate(sync.client_root, tuple(sync.stored), tuple(sync.deleted))
         except InvalidValueError:  # a node both stored and deleted: it moved parents
             self._refuse(sync, SYNC_MALFORMED)
-        if sync.upload:
-            sync.pending = update
-            return _deltas(sync, str(uuid7(self._clock.now())))
         try:
             await self._index.apply(sync.repository_id, sync.expected_root, update)
         except MerkleConflictError:
@@ -229,7 +227,10 @@ class MerkleSyncs:
             repository_id=str(sync.repository_id),
             stored=len(update.nodes),
             deleted=len(update.deleted),
+            upload=len(sync.upload),
         )
+        if sync.upload:
+            return _deltas(sync, str(uuid7(self._clock.now())))
         return [SyncDone(sync.request_id, sync.repository_id, sync.client_root)]
 
     def _reserve(self, sync: _Sync, count: int) -> None:

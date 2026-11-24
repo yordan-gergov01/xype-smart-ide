@@ -118,7 +118,7 @@ A chunk that fails the server scrub re-check is not embedded. It is reported bac
 
 ### Implementation notes (slice 8c2)
 
-- **Consumer.** `backend/messaging/vectors.py` consumes `index.vectors` as the backend's broker user, in the backend's lifespan, again after an outage (`common_lib.messaging.consume_forever`, shared with the indexer). Each result goes through `MerkleIndex.settle`: `settled`, `already_settled` (a repeated delivery, acknowledged) or `not_pending` (dead-lettered); a body that is not a result is `malformed`; a store outage or a held lock is a retry. Metric `xype_index_results_total{outcome}`.
+- **Consumer.** `backend/messaging/vectors.py` consumes `index.vectors` as the backend's broker user, in the backend's lifespan, again after an outage (`common_lib.messaging.consume_forever`, shared with the indexer). Each result goes through `MerkleIndex.settle`: `settled`, `already_settled` (a repeated delivery, acknowledged) or `not_pending` (dead-lettered); a vector of another model than the backend's is `wrong_model` (dead-lettered, the leaf stays pending; slice 8c3a); a body that is not a result is `malformed`; a store outage or a held lock is a retry. Metric `xype_index_results_total{outcome}`.
 - **Forged or misrouted results.** Only the indexer's user can publish a result (slice 8a). Even so, a result names a repository and a leaf, and it is accepted only if that repository has that leaf pending with the same content hash under the same file; the stored row takes its file, lines and hash from the leaf, so only the vector comes from the message. A result for another repository writes nothing (unit and contract tests).
 
 ### Implementation notes (slice 8b)

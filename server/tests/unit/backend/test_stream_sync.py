@@ -89,6 +89,26 @@ async def test_hello_acks_first_then_syncs_to_a_delta() -> None:
     assert uploads == {(L1, F), (L2, F), (L3, G)}
 
 
+async def test_the_delta_comes_after_the_apply_and_ends_the_sync() -> None:
+    """The server's root is the client's once the delta is out (its leaves wait pending
+    in the store), so the same root again starts nothing (ADR-0018, slice 8c3a)."""
+    async with stream_server() as world:
+        token, key_id, repository = await _ready(world)
+        tree = ClientTree(BASE)
+        same = index_pb2.MerkleRootReport(repository_id=str(repository), root_hash=tree.root)
+        async with world.stream(token) as call:
+            await call.write(hello(key_id, repository, **{str(repository): tree.root}))
+            await _read(call)
+            delta = await _answer(call, tree, await _read(call), repository)
+            assert world.merkle.roots[repository] == tree.root
+            await call.write(session_pb2.SessionRequest(merkle_root_report=same))
+            await call.write(heartbeat(3))
+            beat = await _read(call)  # nothing answered the report
+    assert delta.WhichOneof("body") == "merkle_delta"
+    assert beat.heartbeat.seq == 3
+    assert await world.merkle.state(repository, L1) == ("pending", None)
+
+
 async def test_a_root_report_applies_a_deletion_and_acks_the_new_root() -> None:
     async with stream_server() as world:
         token, key_id, repository = await _ready(world)

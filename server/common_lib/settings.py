@@ -15,6 +15,7 @@ from typing import Annotated
 from pydantic import AfterValidator, Field, FilePath, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from common_lib.domain import MODEL_PART_PATTERN, ModelRef
 from common_lib.logging_config import LogFormat, LogLevel
 from common_lib.secret_bytes import SecretBytes
 
@@ -124,6 +125,20 @@ class KeyStoreSettings(TlsSettings):
     keystore_user: str
     keystore_password: SecretStr
     keystore_socket_timeout_seconds: float = Field(default=2.0, gt=0, le=60)
+
+
+class EmbeddingModelSettings(ServiceSettings):
+    """The embedding model (ADR-0002): the indexer embeds with it, and the backend stores
+    only vectors of it (a vector of another model would never be found). The same forms
+    `EmbeddedChunk` accepts, so a typo stops the start, not every chunk. Set both services
+    from the same variables (deploy/docker-compose.yml)."""
+
+    embedding_model_id: str = Field(default="qwen3-embedding:0.6b", pattern=MODEL_PART_PATTERN)
+    embedding_model_version: str = Field(default="ollama-q8", pattern=MODEL_PART_PATTERN)
+
+    @property
+    def embedding_model(self) -> ModelRef:
+        return ModelRef(self.embedding_model_id, self.embedding_model_version)
 
 
 class KekSettings(ServiceSettings):

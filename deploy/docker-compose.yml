@@ -256,6 +256,9 @@ services:
       TLS_CA_FILE: /certs/ca.crt
       # The gRPC Session stream (ADR-0013), TLS with the backend's own certificate.
       GRPC_LISTEN_ADDRESS: 0.0.0.0:50051
+      # The same model as the indexer: other vectors are never stored (ADR-0018).
+      EMBEDDING_MODEL_ID: ${EMBEDDING_MODEL_ID:-qwen3-embedding:0.6b}
+      EMBEDDING_MODEL_VERSION: ${EMBEDDING_MODEL_VERSION:-ollama-q8}
       TLS_CERT_FILE: /certs/tls.crt
       TLS_KEY_FILE: /certs/tls.key
       # Auth (ADR-0014); generate each with `backend.admin_cli new-key` (local-dev runbook).
@@ -341,6 +344,8 @@ services:
       KEK_CURRENT: ${KEK_CURRENT:?generate KEK_CURRENT, see docs/runbooks/local-dev.md}
       KEK_PREVIOUS: ${KEK_PREVIOUS:-}
       OLLAMA_BASE_URL: http://ollama:11434
+      EMBEDDING_MODEL_ID: ${EMBEDDING_MODEL_ID:-qwen3-embedding:0.6b}
+      EMBEDDING_MODEL_VERSION: ${EMBEDDING_MODEL_VERSION:-ollama-q8}
     volumes:
       # The CA certificate only: the indexer serves no TLS.
       - type: bind

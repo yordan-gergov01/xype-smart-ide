@@ -12,7 +12,6 @@ import signal
 import structlog
 from prometheus_client import CollectorRegistry
 
-from common_lib.domain import ModelRef
 from common_lib.embeddings.ollama import OllamaEmbedder
 from common_lib.keystore import RedisKeyStore, connect_keystore, kek_ring
 from common_lib.logging_config import configure_logging
@@ -41,7 +40,7 @@ async def run(settings: IndexerSettings) -> None:
     )
     await scanner.start()
     embedder = OllamaEmbedder(
-        model=ModelRef(settings.embedding_model_id, settings.embedding_model_version),
+        model=settings.embedding_model,
         base_url=settings.ollama_base_url,
         timeout_s=settings.embedding_timeout_s,
     )
