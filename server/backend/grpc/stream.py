@@ -9,7 +9,8 @@ nothing from a request is echoed, logged or put on a span (rule 08).
 
 A message may get no answer or several: Hello answers with `HelloAck` and then a
 `MerkleSyncRequest` for each repository whose root differs (ADR-0018), and the stream's
-own poll asks for every root again once per interval.
+own poll asks for every root again once per interval. A `ChunkUpload` answers with one
+`IndexAck` once its chunks went to the indexer (ADR-0015).
 """
 
 import asyncio
@@ -28,9 +29,9 @@ from opentelemetry.propagate import extract
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode, Tracer
 from xype.v1 import session_pb2
 
-from backend.grpc import messages, sync
+from backend.grpc import messages, sync, upload
 from backend.grpc.metrics import StreamMetrics
-from backend.services.indexing import MerkleSyncs
+from backend.services.indexing import ChunkUploads, MerkleSyncs
 from backend.services.session import (
     HELLO_FIRST,
     HELLO_TWICE,
@@ -103,6 +104,7 @@ class SessionStream:
         registry: StreamRegistry,
         *,
         syncs: SyncFactory,
+        uploads: ChunkUploads,
         clock: Clock,
         metrics: StreamMetrics,
         tracer: Tracer,
@@ -110,10 +112,12 @@ class SessionStream:
         self._gate = gate
         self._registry = registry
         self._syncs = syncs
+        self._uploads = uploads
         self._handlers: dict[str, Callable[[_Stream, Request], Awaitable[list[Response]]]] = {
             "heartbeat": self._heartbeat,
             "merkle_root_report": self._root_report,
             "merkle_tree_report": self._tree_report,
+            "chunk_upload": self._chunk_upload,
         }
         self._clock = clock
         self._metrics = metrics
@@ -329,6 +333,15 @@ class SessionStream:
         assert stream.syncs is not None  # noqa: S101 - built at Hello
         steps = await stream.syncs.report(sync.tree_report(request.merkle_tree_report))
         return sync.responses(self._clock.now(), stream.session_id, steps)
+
+    async def _chunk_upload(self, stream: _Stream, request: Request) -> list[Response]:
+        assert stream.open is not None  # noqa: S101 - checked by `_dispatch`
+        accepted = await self._uploads.accept(
+            stream.open,
+            upload.upload(request.chunk_upload, request.envelope.message_id),
+            messages.correlation_of(request, stream.session_id),
+        )
+        return [upload.ack(self._clock.now(), stream.session_id, accepted)]
 
     async def _poll(self, stream: _Stream) -> list[Response]:
         """The server's own question; a store that is down skips this round."""

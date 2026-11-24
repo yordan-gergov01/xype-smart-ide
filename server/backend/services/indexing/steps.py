@@ -14,6 +14,9 @@ SYNC_MALFORMED = "malformed tree report"
 SYNC_TOO_LARGE = "sync too large"
 SYNC_REFUSED = "tree refused"
 SYNC_UNAVAILABLE = "sync could not be applied now"
+# A payload whose nonce counter is not above the highest seen under its key.
+UPLOAD_NONCE = "nonce already used"
+UPLOAD_UNAVAILABLE = "upload could not be published now"
 
 
 @dataclass(frozen=True, slots=True)

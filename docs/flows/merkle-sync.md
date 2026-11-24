@@ -35,7 +35,7 @@ sequenceDiagram
     end
 ```
 
-The order above is the amended design (ADR-0018, slice 8c2): leaves needing a vector are persisted as pending, so nothing waits in a stream's memory. The store and the `index.vectors` consumer implement it from slice 8c2; the stream applies before it sends the delta from slice 8c3a, and the gateway accepts `ChunkUpload` from slice 8c3b.
+The order above is the amended design (ADR-0018, slice 8c2): leaves needing a vector are persisted as pending, so nothing waits in a stream's memory. The store and the `index.vectors` consumer implement it from slice 8c2; the stream applies before it sends the delta from slice 8c3a, and the gateway accepts `ChunkUpload` from slice 8c3b: only chunks of leaves stored pending with the same hash and file are published, after every nonce counter of the upload advanced, and `IndexAck` means accepted (they settle later).
 
 ## Failure handling
 
@@ -44,6 +44,8 @@ The order above is the amended design (ADR-0018, slice 8c2): leaves needing a ve
 | Stream drops during a sync | Before the apply: the server forgets the sync and the old root stays. After it: pending leaves stay pending and are requested again (slice 8c3) |
 | Indexer fails for some chunks | Their leaves stay pending; the server requests them again after the settle window (slice 8c3) |
 | A result arrives for content a later sync replaced or deleted, or for another repository | It writes nothing and is dead-lettered `not_pending` (it waits for any apply in progress first) |
+| An upload names a chunk that is no longer pending (settled, replaced, deleted) | It is left out without an error; its nonce counter is spent like the others |
+| An upload replays a nonce counter, or names another repository in a nested `ChunkRef` | It is refused (`nonce already used`, `repository not accessible`); every counter is checked before any publish, so nothing of it is published |
 | The same result is delivered twice | It settles once; the repeat is acknowledged |
 | A vector of another embedding model arrives | It writes nothing, is dead-lettered `wrong_model` (logged as a warning: the backend and indexer disagree), and its leaf stays pending for the re-request |
 | A chunk fails the server scrub re-check | It settles as rejected, is stored as a leaf without a vector and is not uploaded again |

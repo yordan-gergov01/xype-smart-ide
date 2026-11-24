@@ -23,6 +23,7 @@ from backend.core.auth import auth_service, client_admin, session_key_service
 from backend.core.session import session_gate, sync_factory
 from backend.core.settings import BackendSettings
 from backend.grpc import METHOD, SERVICE, SessionStream, StreamMetrics, create_grpc_server
+from backend.services.indexing import ChunkUploads
 from backend.services.session import SessionGate, StreamRegistry, listen_for_revocations
 from common_lib.auth import AccessClaims, Credential, NewClient
 from common_lib.clock import Clock
@@ -31,6 +32,7 @@ from support.backend import FakeAuth, make_settings
 from support.merkle import FakeMerkleIndex
 from support.session import FakeRepositoryAccess
 from support.tls import ca_file
+from support.uploads import RecordingBus
 
 type Call = aio.StreamStreamCall[session_pb2.SessionRequest, session_pb2.SessionResponse]
 
@@ -56,6 +58,7 @@ class StreamWorld:
     port: int = 0
     gate: SessionGate | None = None
     streams: StreamRegistry = field(default_factory=StreamRegistry)
+    bus: RecordingBus = field(default_factory=RecordingBus)
 
     async def client(self, team: str = "Web") -> NewClient:
         admin = client_admin(self.settings, self.auth.deps, self.clock)
@@ -128,8 +131,15 @@ async def stream_server(
     tracer = TracerProvider().get_tracer("test")
     metrics = StreamMetrics(world.registry)
     syncs = sync_factory(settings, world.merkle, clock)
+    uploads = ChunkUploads(world.merkle, world.auth.deps.keys, world.bus.publisher(), clock=clock)
     handler = SessionStream(
-        gate, world.streams, syncs=syncs, clock=clock, metrics=metrics, tracer=tracer
+        gate,
+        world.streams,
+        syncs=syncs,
+        uploads=uploads,
+        clock=clock,
+        metrics=metrics,
+        tracer=tracer,
     )
     server, world.port = create_grpc_server(settings, handler)
     # Revocations published by the fakes reach this server's streams, as over Redis.

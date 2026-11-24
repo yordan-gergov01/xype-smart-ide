@@ -11,7 +11,9 @@ from support.merkle_client import ClientTree, Spec
 from support.streams import Call, ShiftedClock, StreamWorld, heartbeat, hello, stream_server
 from xype.v1 import common_pb2, index_pb2, session_pb2
 
-from backend.services.indexing import SYNC_MISMATCH, SyncRequest, TreeReport
+from backend.services.indexing import SYNC_MISMATCH, UPLOAD_UNAVAILABLE, SyncRequest, TreeReport
+from backend.services.session import NO_ACCESS
+from common_lib.security import nonce_for
 
 
 def h(n: int) -> str:
@@ -182,3 +184,49 @@ async def test_a_rate_limited_page_keeps_the_sync() -> None:
                     out = await _read(call)
     assert limited > 0
     assert out.WhichOneof("body") == "merkle_delta"
+
+
+def _upload(
+    key_id: str, repository: uuid.UUID, ref: common_pb2.ChunkRef, counter: int = 1
+) -> session_pb2.SessionRequest:
+    nonce = nonce_for(counter)
+    content = common_pb2.EncryptedPayload(key_id=key_id, nonce=nonce, ciphertext=b"c" * 32)
+    message = index_pb2.ChunkUpload(
+        request_id="r-1",
+        repository_id=str(repository),
+        chunks=[common_pb2.ChunkContent(ref=ref, content=content)],
+    )
+    request = session_pb2.SessionRequest(chunk_upload=message)
+    request.envelope.message_id = "m-1"
+    return request
+
+
+async def test_an_upload_of_a_delta_chunk_is_acked_and_a_foreign_one_refused() -> None:
+    """The cross-team case: a nested ref of a repository not authorised at Hello is
+    refused before anything is published (slice 8c3b). A broker outage refuses only the
+    upload: the stream stays, and the client sends it again under a new counter."""
+    async with stream_server() as world:
+        token, key_id, repository = await _ready(world)
+        tree = ClientTree(BASE)
+        async with world.stream(token) as call:
+            await call.write(hello(key_id, repository, **{str(repository): tree.root}))
+            await _read(call)
+            delta = await _answer(call, tree, await _read(call), repository)
+            first = next(c for c in delta.merkle_delta.upload if c.leaf_node_id == L1)
+            foreign = common_pb2.ChunkRef()
+            foreign.CopyFrom(first)
+            foreign.repository_id = str(uuid.uuid4())
+            await call.write(_upload(key_id, repository, foreign))
+            refused = await _read(call)
+            world.bus.fail_after = 0
+            await call.write(_upload(key_id, repository, first))
+            unavailable = await _read(call)
+            world.bus.fail_after = None
+            await call.write(_upload(key_id, repository, first, counter=2))
+            acked = await _read(call)
+    assert refused.error.message == NO_ACCESS
+    assert unavailable.error.message == UPLOAD_UNAVAILABLE
+    assert acked.index_ack.request_id == "r-1"
+    assert acked.index_ack.server_root_hash == tree.root
+    [(job, _)] = world.bus.published
+    assert (job.chunk.leaf_node_id, job.message_id, job.field_number) == (L1, "m-1", 3)

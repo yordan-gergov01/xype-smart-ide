@@ -29,6 +29,8 @@ _Avoid_: shared rules (means the scrub rules in `packages/scrub-rules/`)
 ## Context engine
 
 **Chunk**: an AST-delimited piece of code (function, class, block) and the unit of indexing and retrieval.
+
+**Chunk upload**: a `ChunkUpload` the gateway accepts: only chunks of pending leaves with the same hash and file go to the indexer, each after its nonce counter advanced; `IndexAck` then means accepted, not indexed (ADR-0015, slice 8c3b).
 _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Obfuscated id**: a keyed hash that stands in for a file path or symbol name outside the client.

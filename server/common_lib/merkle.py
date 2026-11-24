@@ -16,6 +16,8 @@ from common_lib.vectors import VectorRecord
 
 # ADR-0018: at most 2 000 nodes per report, so at most that many parents per lookup.
 MAX_NODES_PER_CALL = 2000
+# One `ChunkUpload` carries at most this many chunks (ADR-0018).
+MAX_CHUNKS_PER_UPLOAD = 256
 # One apply carries a whole sync, the first one a whole repository: about 300 000 chunks
 # at the hosted target (scale-estimates), plus their files and directories.
 MAX_NODES_PER_APPLY = 500_000

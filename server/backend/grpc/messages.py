@@ -9,10 +9,10 @@ from xype.v1 import common_pb2, session_pb2
 from backend.services.session import HelloRequest
 from common_lib.correlation import is_valid_correlation_id
 from common_lib.domain import uuid7
+from common_lib.merkle import MAX_CHUNKS_PER_UPLOAD
 
-# Top-level repository ids, checked against those authorized at Hello. Nested
-# `ChunkRef`s join this when their message is handled (slices 7, 8); until then those
-# messages are refused as unsupported.
+# Messages naming a repository; checked against those authorized at Hello, with the
+# repositories of an upload's nested `ChunkRef`s (slice 8c3b).
 _REPOSITORY_FIELDS = {"chunk_upload", "merkle_root_report", "merkle_tree_report"}
 
 
@@ -34,6 +34,11 @@ def repository_ids(request: session_pb2.SessionRequest) -> list[str]:
     if body not in _REPOSITORY_FIELDS:
         return []
     message = getattr(request, body)
+    if body == "chunk_upload":
+        # Bounded: an upload of more chunks is refused whole after the gate.
+        chunks = request.chunk_upload.chunks[: MAX_CHUNKS_PER_UPLOAD + 1]
+        nested = [chunk.ref.repository_id for chunk in chunks]
+        return [message.repository_id, *nested]
     return [message.repository_id]
 
 

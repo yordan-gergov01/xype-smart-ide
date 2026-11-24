@@ -207,6 +207,9 @@ class MerkleIndex(Protocol):
     ) -> None:
         """Compare-and-set on the root; raises MerkleConflictError when it moved. New or
         changed leaves are stored pending (slice 8c2)."""
+    async def pending(self, repository_id: UUID, refs: Sequence[ChunkRef]) -> frozenset[str]:
+        """Leaf ids of refs stored pending with their hash and file (slice 8c3b); at most
+        256 refs, another repository's never match."""
     async def settle(self, result: LeafResult) -> Settled:
         """The indexer's result for one pending leaf (slice 8c2): settled,
         already_settled or not_pending. The vector consumer refuses a vector of
@@ -227,6 +230,18 @@ class MerkleSyncs:
     async def report(self, report: TreeReport) -> list[SyncStep]: ...
 # SyncStep = SyncRequest | SyncDelta | SyncDone; a SyncDelta goes out only after the apply
 # that stored its leaves pending committed, and ends the sync (slice 8c3a).
+
+class ChunkPublisher(Protocol):   # backend/messaging/chunks.py: BusChunkPublisher
+    async def publish(self, job: ChunkJob, *, correlation_id: str, ttl_ms: int) -> None: ...
+
+class ChunkUploads:
+    """backend/services/indexing/upload.py (slice 8c3b): checks an Upload against the
+    stream's key and repository, keeps only pending leaves, advances every nonce counter
+    (rising in message order) before any publish, then publishes the jobs with the key's
+    remaining life as TTL; a broker or store failure refuses only the upload."""
+    async def accept(
+        self, session: OpenSession, upload: Upload, correlation_id: str
+    ) -> UploadAccepted: ...
 ```
 
 ## cache

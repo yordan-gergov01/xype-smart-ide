@@ -4,6 +4,7 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 from typing import Protocol
 
+from common_lib.domain import ChunkRef
 from common_lib.merkle import LeafResult, MerkleNodeView, MerkleUpdate, Settled
 
 
@@ -30,6 +31,12 @@ class MerkleIndex(Protocol):
         node must be reachable from the root. Raises `MerkleConflictError` when the root
         changed, and `InvalidValueError` for an unknown repository or a node left
         unreachable (an orphan or a cycle); either way nothing is written."""
+        ...
+
+    async def pending(self, repository_id: uuid.UUID, refs: Sequence[ChunkRef]) -> frozenset[str]:
+        """The leaf ids of `refs` stored in `repository_id` as pending leaves with the
+        ref's hash and file (its parent): the chunks an upload may hand to the indexer.
+        Another repository's refs never match. At most `MAX_CHUNKS_PER_UPLOAD` refs."""
         ...
 
     async def settle(self, result: LeafResult) -> Settled:

@@ -11,6 +11,7 @@ from backend.services.indexing import MerkleIndex
 from common_lib.domain import ChunkRef
 from common_lib.errors import InvalidValueError
 from common_lib.merkle import (
+    MAX_CHUNKS_PER_UPLOAD,
     MAX_NODES_PER_CALL,
     LeafResult,
     MerkleConflictError,
@@ -162,6 +163,16 @@ async def check_repositories_with_the_same_ids_stay_apart(
     }
 
 
+def ref(
+    repository_id: uuid.UUID, node: MerkleNodeUpdate, *, file_id: str | None = None
+) -> ChunkRef:
+    """`node`'s chunk as the delta asked for it (its file is its parent)."""
+    assert node.lines is not None
+    return ChunkRef(
+        repository_id, file_id or node.parent_id or F, *node.lines, node.hash, node.node_id
+    )
+
+
 def result(
     repository_id: uuid.UUID,
     node: MerkleNodeUpdate,
@@ -170,14 +181,11 @@ def result(
     file_id: str | None = None,
 ) -> LeafResult:
     """The indexer's result for `node` as it was uploaded (its file is its parent)."""
-    assert node.lines is not None
-    ref = ChunkRef(
-        repository_id, file_id or node.parent_id or F, *node.lines, node.hash, node.node_id
-    )
+    chunk = ref(repository_id, node, file_id=file_id)
     if reason is not None:
-        return LeafResult(ref, reason=reason)
+        return LeafResult(chunk, reason=reason)
     vector = vector_contract.axis((0, 1.0))
-    return LeafResult(ref, embedded=VectorRecord(ref, vector, vector_contract.MODEL))
+    return LeafResult(chunk, embedded=VectorRecord(chunk, vector, vector_contract.MODEL))
 
 
 async def check_a_pending_leaf_settles_once(
@@ -235,6 +243,29 @@ async def check_an_unchanged_leaf_keeps_its_state(
     assert await index.settle(result(repo, edited)) == "settled"
 
 
+async def check_only_pending_leaves_with_their_hash_and_file_may_be_uploaded(
+    index: MerkleIndex, repositories: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    repo, other = repositories
+    await index.apply(repo, None, MerkleUpdate(ROOT_1, TREE))
+    first, second, third = TREE[2], TREE[3], TREE[5]
+    assert await index.settle(result(repo, third)) == "settled"
+    stale = leaf(L2, F, 99, (12, 20))  # a hash the store does not have
+    refs = [
+        ref(repo, first),
+        ref(repo, stale),
+        ref(repo, second, file_id=G),  # another file
+        ref(repo, third),  # indexed, no longer pending
+        ref(other, first),  # another repository's ref
+        ChunkRef(repo, D, 1, 1, TREE[1].hash, F),  # an inner node
+    ]
+    assert await index.pending(repo, refs) == {L1}
+    assert await index.pending(other, [ref(other, first)]) == frozenset()
+    assert await index.pending(repo, []) == frozenset()
+    with pytest.raises(InvalidValueError):
+        await index.pending(repo, [ref(repo, first)] * (MAX_CHUNKS_PER_UPLOAD + 1))
+
+
 CHECKS: tuple[Check, ...] = (
     check_a_tree_is_stored_and_read_by_level,
     check_a_stale_root_changes_nothing,
@@ -246,4 +277,5 @@ CHECKS: tuple[Check, ...] = (
     check_a_late_result_for_replaced_or_deleted_content_is_not_pending,
     check_a_result_must_match_its_leaf,
     check_an_unchanged_leaf_keeps_its_state,
+    check_only_pending_leaves_with_their_hash_and_file_may_be_uploaded,
 )

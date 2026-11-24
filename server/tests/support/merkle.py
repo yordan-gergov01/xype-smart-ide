@@ -8,6 +8,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from common_lib.domain import ChunkRef, is_hmac_hex
 from common_lib.errors import InvalidValueError
 from common_lib.merkle import (
+    MAX_CHUNKS_PER_UPLOAD,
     MAX_NODES_PER_CALL,
     LeafResult,
     LeafState,
@@ -83,6 +84,24 @@ class FakeMerkleIndex:
         self.nodes[repository_id] = tree
         self.states[repository_id], self.vectors[repository_id] = states, vectors
         self.roots[repository_id] = update.new_root
+
+    async def pending(self, repository_id: uuid.UUID, refs: Sequence[ChunkRef]) -> frozenset[str]:
+        if len(refs) > MAX_CHUNKS_PER_UPLOAD:
+            raise InvalidValueError(f"at most {MAX_CHUNKS_PER_UPLOAD} chunks per upload")
+        tree, states = self.nodes.get(repository_id, {}), self.states.get(repository_id, {})
+        found = set()
+        for ref in refs:
+            leaf = tree.get(ref.leaf_node_id)
+            if (
+                ref.repository_id == repository_id
+                and leaf is not None
+                and leaf.is_leaf
+                and leaf.hash == ref.chunk_hash
+                and leaf.parent_id == ref.obfuscated_file_id
+                and states[leaf.node_id][0] == "pending"
+            ):
+                found.add(leaf.node_id)
+        return frozenset(found)
 
     async def settle(self, result: LeafResult) -> Settled:
         chunk = result.chunk

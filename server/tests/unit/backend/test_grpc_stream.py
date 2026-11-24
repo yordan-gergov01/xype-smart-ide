@@ -15,11 +15,13 @@ from prometheus_client import CollectorRegistry
 from support.backend import FakeAuth, fake_indexing, make_settings
 from support.streams import Call, ShiftedClock, StreamWorld, heartbeat, hello, stream_server
 from support.tls import ca_file
+from support.uploads import RecordingBus
 from xype.v1 import common_pb2, feedback_pb2, index_pb2, session_pb2
 
 from backend.core.session import sync_factory
 from backend.grpc import SessionStream, StreamMetrics
 from backend.main import create_app
+from backend.services.indexing import ChunkUploads
 from common_lib.auth import RateLimitedError
 
 Code = session_pb2.StreamError
@@ -330,6 +332,9 @@ async def test_a_failed_read_ends_the_stream_and_logs_only_the_type(
             world.gate,  # type: ignore[arg-type]  # reason: set by stream_server
             world.streams,
             syncs=sync_factory(world.settings, world.merkle, world.clock),
+            uploads=ChunkUploads(
+                world.merkle, world.auth.deps.keys, RecordingBus().publisher(), clock=world.clock
+            ),
             clock=world.clock,
             metrics=StreamMetrics(CollectorRegistry()),
             tracer=TracerProvider().get_tracer("test"),

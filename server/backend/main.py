@@ -35,11 +35,12 @@ from backend.dal.health import DatabaseProbe, RedisProbe
 from backend.dal.indexing import PgMerkleIndex
 from backend.dal.session import SqlRepositoryAccess
 from backend.grpc import SessionStream, create_grpc_server
+from backend.messaging.chunks import BusChunkPublisher
 from backend.messaging.health import BrokerProbe
 from backend.messaging.vectors import ResultMetrics, VectorResults
 from backend.services.auth import AuthDependencies, RevocationSubscriber
 from backend.services.health import DependencyProbe, HealthService
-from backend.services.indexing import MerkleIndex
+from backend.services.indexing import ChunkUploads, MerkleIndex
 from backend.services.session import RepositoryAccess, StreamRegistry, listen_for_revocations
 from common_lib.clock import Clock, SystemClock
 from common_lib.logging_config import configure_logging
@@ -89,6 +90,14 @@ def _observability(settings: BackendSettings) -> TracerProvider:
     )
 
 
+# No interactive docs and no published schema.
+_NO_DOCS: dict[str, Any] = {  # reason: Any - unpacked into FastAPI's keyword arguments
+    "docs_url": None,
+    "redoc_url": None,
+    "openapi_url": None,
+}
+
+
 def create_app(
     settings: BackendSettings | None = None,
     *,
@@ -115,21 +124,21 @@ def create_app(
     gate = session_gate(settings, authentication, auth, repositories, clock)
     streams = StreamRegistry()
     merkle = indexing.merkle or PgMerkleIndex(database.write_sessions)
-    syncs = sync_factory(settings, merkle, clock)
+    publisher = BusChunkPublisher(indexing.bus or (lambda: connect_bus(settings)))
     stream = session_stream(
-        gate, streams, syncs=syncs, clock=clock, metrics=registry, tracer=tracer
+        gate,
+        streams,
+        syncs=sync_factory(settings, merkle, clock),
+        uploads=ChunkUploads(merkle, auth.keys, publisher, clock=clock),
+        clock=clock,
+        metrics=registry,
+        tracer=tracer,
     )
-    closers = (database.dispose, redis.aclose, keystore.aclose)
+    closers = (database.dispose, redis.aclose, keystore.aclose, publisher.close)
     consumer = _results_consumer(settings, indexing.bus, merkle, registry, tracer)
-    app = FastAPI(
-        title="XYPE backend",
-        lifespan=_lifespan(
-            settings, tracer_provider, closers, stream, streams, (revocations, consumer)
-        ),
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
-    )
+    background = (revocations, consumer)
+    lifespan = _lifespan(settings, tracer_provider, closers, stream, streams, background)
+    app = FastAPI(title="XYPE backend", lifespan=lifespan, **_NO_DOCS)
     app.state.metrics_registry, app.state.tracer_provider = registry, tracer_provider
     app.state.health_service = HealthService(
         probes, timeout_seconds=settings.readiness_timeout_seconds
