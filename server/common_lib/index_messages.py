@@ -20,6 +20,7 @@ from pydantic import (
 
 from common_lib.domain import ChunkRef, ModelRef
 from common_lib.errors import InvalidValueError
+from common_lib.merkle import LeafResult, RejectionReason
 from common_lib.vectors import EMBEDDING_DIMENSION, VectorRecord
 
 SCHEMA_VERSION: Literal[1] = 1
@@ -115,16 +116,20 @@ class EmbeddedChunk(_Message):
             self.chunk.ref(), self.vector, ModelRef(self.model_id, self.model_version)
         )
 
+    def leaf_result(self) -> LeafResult:
+        record = self.record()
+        return LeafResult(record.chunk, embedded=record)
+
 
 class RejectedChunk(_Message):
     """`index.vectors`: a chunk the indexer did not embed, with a fixed reason only."""
 
     outcome: Literal["rejected"] = "rejected"
     chunk: WireChunkRef
-    # `unscannable`: the server check could not run (not UTF-8, or over its time budget);
-    # a chunk it cannot clear fails closed (ADR-0019).
-    # `unembeddable`: the model refused the text or answered something unusable.
-    reason: Literal["secret_found", "too_large", "unscannable", "unembeddable"]
+    reason: RejectionReason
+
+    def leaf_result(self) -> LeafResult:
+        return LeafResult(self.chunk.ref(), reason=self.reason)
 
 
 type IndexResult = EmbeddedChunk | RejectedChunk

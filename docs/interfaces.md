@@ -205,7 +205,17 @@ class MerkleIndex(Protocol):
     async def apply(
         self, repository_id: UUID, expected_root: str | None, update: MerkleUpdate,
     ) -> None:
-        """Compare-and-set on the root; raises MerkleConflictError when it moved."""
+        """Compare-and-set on the root; raises MerkleConflictError when it moved. New or
+        changed leaves are stored pending (slice 8c2)."""
+    async def settle(self, result: LeafResult) -> Settled:
+        """The indexer's result for one pending leaf (slice 8c2): settled,
+        already_settled or not_pending."""
+
+@dataclass(frozen=True, slots=True)
+class LeafResult:  # common_lib/merkle.py
+    chunk: ChunkRef
+    embedded: VectorRecord | None = None   # or
+    reason: RejectionReason | None = None
 
 def inner_hash(children: Iterable[MerkleNodeUpdate]) -> str: ...   # ADR-0018
 

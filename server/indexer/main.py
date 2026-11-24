@@ -8,17 +8,15 @@ it starts again with a growing wait, and `/readyz` says not ready meanwhile.
 import asyncio
 import contextlib
 import signal
-from collections.abc import Awaitable, Callable
 
 import structlog
 from prometheus_client import CollectorRegistry
 
 from common_lib.domain import ModelRef
 from common_lib.embeddings.ollama import OllamaEmbedder
-from common_lib.errors import DependencyUnavailableError
 from common_lib.keystore import RedisKeyStore, connect_keystore, kek_ring
 from common_lib.logging_config import configure_logging
-from common_lib.messaging import CHUNKS, MessageBus, connect_bus
+from common_lib.messaging import CHUNKS, MessageBus, connect_bus, consume_forever
 from common_lib.settings import load_settings
 from common_lib.tracing import configure_tracing
 from indexer.handler import ChunkIndexer
@@ -28,35 +26,8 @@ from indexer.scan import ProcessScanner
 from indexer.settings import IndexerSettings
 
 SERVICE_NAME = "indexer"
-# Waits between consumer restarts: 1 s, 2 s, ... up to 30 s.
-_RESTART_MIN_S, _RESTART_MAX_S = 1.0, 30.0
 
 logger = structlog.get_logger(__name__)
-
-
-async def consume_forever(
-    connect: Callable[[], Awaitable[MessageBus]],
-    run: Callable[[MessageBus], Awaitable[None]],
-    readiness: Readiness,
-) -> None:
-    """Connects and consumes until cancelled; a broker failure waits and starts again."""
-    wait = _RESTART_MIN_S
-    while True:
-        bus: MessageBus | None = None
-        try:
-            bus = await connect()
-            readiness.consuming = True
-            wait = _RESTART_MIN_S
-            await run(bus)
-        except DependencyUnavailableError:
-            logger.warning("indexer.consumer.restarting", wait_s=wait)
-        finally:
-            readiness.consuming = False
-            if bus is not None:
-                with contextlib.suppress(DependencyUnavailableError, OSError):
-                    await bus.close()
-        await asyncio.sleep(wait)
-        wait = min(wait * 2, _RESTART_MAX_S)
 
 
 async def run(settings: IndexerSettings) -> None:
@@ -86,7 +57,9 @@ async def run(settings: IndexerSettings) -> None:
         await bus.consume(CHUNKS, indexer.handle, prefetch=settings.prefetch)
 
     logger.info("indexer.started")
-    worker = asyncio.create_task(consume_forever(lambda: connect_bus(settings), consume, readiness))
+    worker = asyncio.create_task(
+        consume_forever(lambda: connect_bus(settings), consume, readiness.set_consuming)
+    )
     try:
         await worker
     finally:

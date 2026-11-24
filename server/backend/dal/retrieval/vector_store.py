@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import Row, Select, delete, func, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.dal.transactions import transaction
@@ -57,22 +57,10 @@ class PgVectorStore:
 
     async def upsert(self, repository_id: uuid.UUID, records: Sequence[VectorRecord]) -> None:
         check_write(repository_id, records)
-        # One row per leaf: a later duplicate wins, as Postgres refuses two in one insert.
-        rows = list(
-            {(r.chunk.repository_id, r.chunk.leaf_node_id): _row(r) for r in records}.values()
-        )
-        if not rows:
+        if not records:
             return
-        statement = insert(CodeChunk).values(rows)
-        statement = statement.on_conflict_do_update(
-            index_elements=["repository_id", "leaf_node_id"],
-            set_={
-                **{name: statement.excluded[name] for name in _REPLACED},
-                "updated_at": func.now(),
-            },
-        )
         async with transaction(self._write) as session:
-            await session.execute(statement)
+            await session.execute(upsert_statement(records))
 
     async def delete(self, repository_id: uuid.UUID, leaf_node_ids: Sequence[str]) -> None:
         check_write(repository_id, (), leaf_node_ids)
@@ -112,6 +100,21 @@ class PgVectorStore:
         # `relaxed_order` may return rows slightly out of order.
         hits = sorted((_hit(row) for row in rows), key=lambda h: -h.score)
         return tuple(hit for hit in hits if min_score is None or hit.score >= min_score)
+
+
+def upsert_statement(records: Sequence[VectorRecord]) -> Insert:
+    """The upsert by `(repository_id, leaf_node_id)`, for the caller's transaction: the
+    adapter's own, or the Merkle index's when it settles a leaf (slice 8c2)."""
+    # One row per leaf: a later duplicate wins, as Postgres refuses two in one insert.
+    rows = list({(r.chunk.repository_id, r.chunk.leaf_node_id): _row(r) for r in records}.values())
+    statement = insert(CodeChunk).values(rows)
+    return statement.on_conflict_do_update(
+        index_elements=["repository_id", "leaf_node_id"],
+        set_={
+            **{name: statement.excluded[name] for name in _REPLACED},
+            "updated_at": func.now(),
+        },
+    )
 
 
 def search_query(

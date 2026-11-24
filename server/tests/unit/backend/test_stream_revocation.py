@@ -12,7 +12,7 @@ import structlog
 from grpc import aio
 from redis.exceptions import ConnectionError as RedisConnectionError
 from support.auth import FakeRevocationPublisher
-from support.backend import FakeAuth, make_settings
+from support.backend import FakeAuth, fake_indexing, make_settings
 from support.streams import Call, StreamWorld, heartbeat, hello, stream_server
 from xype.v1 import session_pb2
 
@@ -154,7 +154,11 @@ async def test_shutting_the_app_down_drains_its_streams() -> None:
     settings = make_settings()
     fakes = FakeAuth(settings)
     app = create_app(
-        settings, probes=[], auth=fakes.deps, revocations=fakes.revocations.subscriber()
+        settings,
+        probes=[],
+        auth=fakes.deps,
+        indexing=fake_indexing(),
+        revocations=fakes.revocations.subscriber(),
     )
     world = StreamWorld(settings, fakes.clock, fakes)
     token, key_id, _ = await _open(world, await world.client())
@@ -321,10 +325,16 @@ async def test_a_listener_that_dies_is_reported_at_once(
 ) -> None:
     settings = make_settings()
     fakes = FakeAuth(settings)
-    app = create_app(settings, probes=[], auth=fakes.deps, revocations=_BrokenSubscriber())
+    app = create_app(
+        settings,
+        probes=[],
+        auth=fakes.deps,
+        indexing=fake_indexing(),
+        revocations=_BrokenSubscriber(),
+    )
     async with app.router.lifespan_context(app):
         await asyncio.sleep(0.05)
         out = capsys.readouterr().out
-    assert "session.revocations.listener_failed" in out
+    assert "backend.background_failed" in out
     assert "RuntimeError" in out
     assert "secret-detail-456" not in out

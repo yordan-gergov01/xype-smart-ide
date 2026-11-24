@@ -12,7 +12,7 @@ import pytest
 from grpc import aio
 from opentelemetry.sdk.trace import TracerProvider
 from prometheus_client import CollectorRegistry
-from support.backend import FakeAuth, make_settings
+from support.backend import FakeAuth, fake_indexing, make_settings
 from support.streams import Call, ShiftedClock, StreamWorld, heartbeat, hello, stream_server
 from support.tls import ca_file
 from xype.v1 import common_pb2, feedback_pb2, index_pb2, session_pb2
@@ -177,7 +177,9 @@ async def test_the_app_lifespan_serves_the_stream() -> None:
     settings = make_settings()
     fakes = FakeAuth(settings)
     revocations = fakes.revocations.subscriber()
-    app = create_app(settings, probes=[], auth=fakes.deps, revocations=revocations)
+    app = create_app(
+        settings, probes=[], auth=fakes.deps, indexing=fake_indexing(), revocations=revocations
+    )
     async with app.router.lifespan_context(app):
         credentials = grpc.ssl_channel_credentials(root_certificates=ca_file().read_bytes())
         target = f"127.0.0.1:{app.state.grpc_port}"

@@ -5,8 +5,10 @@ startup; readiness reports which dependency is missing.
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
+from typing import Any
 
 import structlog
 from fastapi import FastAPI
@@ -34,18 +36,32 @@ from backend.dal.indexing import PgMerkleIndex
 from backend.dal.session import SqlRepositoryAccess
 from backend.grpc import SessionStream, create_grpc_server
 from backend.messaging.health import BrokerProbe
+from backend.messaging.vectors import ResultMetrics, VectorResults
 from backend.services.auth import AuthDependencies, RevocationSubscriber
 from backend.services.health import DependencyProbe, HealthService
 from backend.services.indexing import MerkleIndex
 from backend.services.session import RepositoryAccess, StreamRegistry, listen_for_revocations
 from common_lib.clock import Clock, SystemClock
 from common_lib.logging_config import configure_logging
+from common_lib.messaging import VECTORS, MessageBus, connect_bus, consume_forever
 from common_lib.settings import load_settings
 from common_lib.tracing import configure_tracing
 
 SERVICE_NAME = "backend"
 
 logger = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class Indexing:
+    """The Merkle index and the broker connection its results arrive on (`index.vectors`);
+    tests pass fakes, the defaults are Postgres and the backend's broker user."""
+
+    merkle: MerkleIndex | None = None
+    bus: Callable[[], Awaitable[MessageBus]] | None = None
+
+
+REAL_INDEXING = Indexing()
 
 
 def _default_probes(
@@ -81,7 +97,7 @@ def create_app(
     repositories: RepositoryAccess | None = None,
     revocations: RevocationSubscriber | None = None,
     clock: Clock | None = None,
-    merkle: MerkleIndex | None = None,
+    indexing: Indexing = REAL_INDEXING,
 ) -> FastAPI:
     """Build the app. Settings come from the environment unless given; tests pass fakes."""
     settings = settings or load_settings(BackendSettings)
@@ -94,33 +110,55 @@ def create_app(
     auth = auth or auth_dependencies(settings, database, redis, keystore)
     repositories = repositories or SqlRepositoryAccess(database.read_sessions)
     revocations = revocations or RedisRevocationSubscriber(redis)
-    merkle = merkle or PgMerkleIndex(database.write_sessions)
     registry, tracer = CollectorRegistry(), tracer_provider.get_tracer(SERVICE_NAME)
     authentication = auth_service(settings, auth, clock)
     gate = session_gate(settings, authentication, auth, repositories, clock)
     streams = StreamRegistry()
+    merkle = indexing.merkle or PgMerkleIndex(database.write_sessions)
     syncs = sync_factory(settings, merkle, clock)
     stream = session_stream(
         gate, streams, syncs=syncs, clock=clock, metrics=registry, tracer=tracer
     )
     closers = (database.dispose, redis.aclose, keystore.aclose)
+    results = VectorResults(merkle, metrics=ResultMetrics.create(registry), tracer=tracer)
+    consumer = _results_consumer(settings, indexing.bus, results)
     app = FastAPI(
         title="XYPE backend",
-        lifespan=_lifespan(settings, tracer_provider, closers, stream, streams, revocations),
+        lifespan=_lifespan(
+            settings, tracer_provider, closers, stream, streams, (revocations, consumer)
+        ),
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
     )
-    app.state.metrics_registry = registry
-    app.state.tracer_provider = tracer_provider
+    app.state.metrics_registry, app.state.tracer_provider = registry, tracer_provider
     app.state.health_service = HealthService(
         probes, timeout_seconds=settings.readiness_timeout_seconds
     )
-    app.state.auth_service = authentication
+    app.state.auth_service, app.state.session_stream = authentication, stream
     app.state.session_key_service = session_key_service(settings, auth, clock)
-    app.state.session_stream = stream
     _mount(app, tracer, HttpMetrics(registry))
     return app
+
+
+def _results_consumer(
+    settings: BackendSettings,
+    connect: Callable[[], Awaitable[MessageBus]] | None,
+    results: VectorResults,
+) -> Callable[[], Coroutine[Any, Any, None]]:  # reason: Any - a coroutine's send type
+    """Consumes `index.vectors` as the backend's broker user, again after an outage."""
+    connect = connect or (lambda: connect_bus(settings))
+
+    async def consume(bus: MessageBus) -> None:
+        await bus.consume(VECTORS, results.handle, prefetch=settings.index_results_prefetch)
+
+    def report(consuming: bool) -> None:
+        logger.info("index.results.consumer", consuming=consuming)
+
+    async def run() -> None:
+        await consume_forever(connect, consume, report)
+
+    return run
 
 
 def _lifespan(
@@ -129,11 +167,13 @@ def _lifespan(
     closers: Sequence[Callable[[], Awaitable[object]]],
     stream: SessionStream,
     streams: StreamRegistry,
-    revocations: RevocationSubscriber,
+    background: tuple[RevocationSubscriber, Callable[[], Coroutine[Any, Any, None]]],
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
-    """Starts the Session stream server and the revocation listener. On shutdown, in
-    order: every stream is told to reconnect elsewhere (drain), the server gives them the
-    grace period, the listener stops, the stores close, the last spans are flushed."""
+    """Starts the Session stream server, the revocation listener and the `index.vectors`
+    consumer. On shutdown, in order: every stream is told to reconnect elsewhere (drain),
+    the server gives them the grace period, the consumer and the listener stop, the
+    stores close, the last spans are flushed."""
+    revocations, consume_results = background
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -147,6 +187,9 @@ def _lifespan(
             listener = asyncio.create_task(listen_for_revocations(revocations, streams))
             listener.add_done_callback(_report_early_end)
             stack.push_async_callback(_stop, listener)
+            consumer = asyncio.create_task(consume_results())
+            consumer.add_done_callback(_report_early_end)
+            stack.push_async_callback(_stop, consumer)
             server, app.state.grpc_port = create_grpc_server(settings, stream)
             await server.start()
             stack.push_async_callback(server.stop, settings.stream_shutdown_grace_s)
@@ -158,10 +201,11 @@ def _lifespan(
 
 
 def _report_early_end(task: asyncio.Task[None]) -> None:
-    """The listener only ends by cancellation; anything else means streams now close at
-    their next message only, so it is logged (the type only) as soon as it happens."""
+    """The background tasks only end by cancellation; anything else (streams now close at
+    their next message only, or results wait in their queue) is logged, the type only,
+    as soon as it happens."""
     if not task.cancelled() and task.exception() is not None:
-        logger.error("session.revocations.listener_failed", error=type(task.exception()).__name__)
+        logger.error("backend.background_failed", error=type(task.exception()).__name__)
 
 
 async def _stop(task: asyncio.Task[None]) -> None:

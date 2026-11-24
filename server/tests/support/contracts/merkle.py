@@ -8,14 +8,19 @@ from collections.abc import Awaitable, Callable
 import pytest
 
 from backend.services.indexing import MerkleIndex
+from common_lib.domain import ChunkRef
 from common_lib.errors import InvalidValueError
 from common_lib.merkle import (
     MAX_NODES_PER_CALL,
+    LeafResult,
     MerkleConflictError,
     MerkleNodeUpdate,
     MerkleNodeView,
     MerkleUpdate,
+    RejectionReason,
 )
+from common_lib.vectors import VectorRecord
+from support.contracts import vectors as vector_contract
 
 
 def hexid(n: int) -> str:
@@ -157,6 +162,79 @@ async def check_repositories_with_the_same_ids_stay_apart(
     }
 
 
+def result(
+    repository_id: uuid.UUID,
+    node: MerkleNodeUpdate,
+    *,
+    reason: RejectionReason | None = None,
+    file_id: str | None = None,
+) -> LeafResult:
+    """The indexer's result for `node` as it was uploaded (its file is its parent)."""
+    assert node.lines is not None
+    ref = ChunkRef(
+        repository_id, file_id or node.parent_id or F, *node.lines, node.hash, node.node_id
+    )
+    if reason is not None:
+        return LeafResult(ref, reason=reason)
+    vector = vector_contract.axis((0, 1.0))
+    return LeafResult(ref, embedded=VectorRecord(ref, vector, vector_contract.MODEL))
+
+
+async def check_a_pending_leaf_settles_once(
+    index: MerkleIndex, repositories: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    repo, _ = repositories
+    await index.apply(repo, None, MerkleUpdate(ROOT_1, TREE))
+    first, second = TREE[2], TREE[3]
+    assert await index.settle(result(repo, first)) == "settled"
+    assert await index.settle(result(repo, first)) == "already_settled"
+    assert await index.settle(result(repo, second, reason="secret_found")) == "settled"
+    assert await index.settle(result(repo, second)) == "already_settled"
+
+
+async def check_a_late_result_for_replaced_or_deleted_content_is_not_pending(
+    index: MerkleIndex, repositories: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    repo, _ = repositories
+    await index.apply(repo, None, MerkleUpdate(ROOT_1, TREE))
+    changed = leaf(L1, F, 9, (1, 10))
+    await index.apply(repo, ROOT_1, MerkleUpdate(ROOT_2, (changed,), deleted=(G,)))
+    assert await index.settle(result(repo, TREE[2])) == "not_pending"  # the old content
+    assert await index.settle(result(repo, TREE[5])) == "not_pending"  # deleted
+    assert await index.settle(result(repo, changed)) == "settled"
+
+
+async def check_a_result_must_match_its_leaf(
+    index: MerkleIndex, repositories: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    repo, other = repositories
+    await index.apply(repo, None, MerkleUpdate(ROOT_1, TREE))
+    first = TREE[2]
+    assert await index.settle(result(repo, first, file_id=G)) == "not_pending"
+    assert await index.settle(result(other, first)) == "not_pending"  # another repository
+    assert await index.settle(result(uuid.uuid4(), first)) == "not_pending"  # unknown one
+    unknown = leaf(hexid(0x99), F, 3, (1, 10))
+    assert await index.settle(result(repo, unknown)) == "not_pending"
+    not_a_leaf = leaf(F, D, 2, (1, 10))  # the file node's id and hash
+    assert await index.settle(result(repo, not_a_leaf)) == "not_pending"
+    assert await index.settle(result(repo, first)) == "settled"
+
+
+async def check_an_unchanged_leaf_keeps_its_state(
+    index: MerkleIndex, repositories: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    repo, _ = repositories
+    await index.apply(repo, None, MerkleUpdate(ROOT_1, TREE))
+    first = TREE[2]
+    assert await index.settle(result(repo, first)) == "settled"
+    moved = leaf(L1, F, 3, (5, 14))  # same content, four lines down
+    await index.apply(repo, ROOT_1, MerkleUpdate(ROOT_2, (moved,)))
+    assert await index.settle(result(repo, moved)) == "already_settled"
+    edited = leaf(L1, F, 7, (5, 14))
+    await index.apply(repo, ROOT_2, MerkleUpdate(ROOT_3, (edited,)))
+    assert await index.settle(result(repo, edited)) == "settled"
+
+
 CHECKS: tuple[Check, ...] = (
     check_a_tree_is_stored_and_read_by_level,
     check_a_stale_root_changes_nothing,
@@ -164,4 +242,8 @@ CHECKS: tuple[Check, ...] = (
     check_a_node_is_replaced_and_limits_hold,
     check_every_node_stays_reachable,
     check_repositories_with_the_same_ids_stay_apart,
+    check_a_pending_leaf_settles_once,
+    check_a_late_result_for_replaced_or_deleted_content_is_not_pending,
+    check_a_result_must_match_its_leaf,
+    check_an_unchanged_leaf_keeps_its_state,
 )
