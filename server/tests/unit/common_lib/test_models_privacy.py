@@ -24,6 +24,8 @@ REVIEWED_TEXT_COLUMNS = {
     "repositories.name": "repository metadata (repo name, not a file)",
     "repositories.remote_url": "repository metadata; CHECK allows only credential-free forms",
     "repositories.template_kind": "fixed vocabulary",
+    "merkle_nodes.index_state": "fixed vocabulary (CHECK)",
+    "merkle_nodes.rejection_reason": "fixed vocabulary (CHECK)",
     "repositories.hmac_key_id": "key id, not key material",
     "repository_keys.hmac_key_id": "key id, not key material",
     "repository_keys.kek_id": "key id, not key material",

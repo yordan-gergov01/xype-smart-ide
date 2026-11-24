@@ -226,9 +226,9 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "Backend layers depend downwards only: api, grpc -> services -> dal"
+name = "Backend layers depend downwards only: api, grpc, messaging -> services -> dal"
 type = "layers"
-layers = ["backend.api | backend.grpc", "backend.services", "backend.dal"]
+layers = ["backend.api | backend.grpc | backend.messaging", "backend.services", "backend.dal"]
 
 # The gRPC transport, like the API, reaches stores only through services (rule 03).
 [[tool.importlinter.contracts]]

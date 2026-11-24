@@ -12,11 +12,12 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from backend.core.auth import peppers
 from backend.core.settings import BackendSettings
-from backend.main import create_app
+from backend.main import Indexing, create_app
 from backend.services.auth import AuthDependencies, ClientCredentialVerifier
 from backend.services.health import DependencyProbe
 from common_lib.clock import Clock, SystemClock
 from common_lib.errors import DependencyUnavailableError
+from common_lib.messaging import MessageBus
 from support.auth import (
     KEK,
     PEPPER,
@@ -26,7 +27,9 @@ from support.auth import (
     FakeRevocationPublisher,
     FakeUserStore,
 )
+from support.bus import FakeBus
 from support.keystore import FakeKeyStore
+from support.merkle import FakeMerkleIndex
 from support.repositories import FakeRepositoryStore
 from support.tls import ca_file, service_dir
 
@@ -154,3 +157,13 @@ def emitted(harness: Harness) -> str:
 
 # Builds a `Harness` from probes and settings overrides (the unit conftest's fixture).
 type HarnessFactory = Callable[..., Harness]
+
+
+def fake_indexing() -> Indexing:
+    """An in-memory Merkle index, and a broker that never delivers a result: the app's
+    `index.vectors` consumer runs without leaving the process."""
+    return Indexing(merkle=FakeMerkleIndex(), bus=_idle_bus)
+
+
+async def _idle_bus() -> MessageBus:
+    return FakeBus()

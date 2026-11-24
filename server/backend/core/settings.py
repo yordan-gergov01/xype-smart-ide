@@ -24,6 +24,8 @@ class BackendSettings(PostgresSettings, RabbitMQSettings, KeyStoreSettings, KekS
     db_read_host: str | None = None
     db_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     db_command_timeout_seconds: float = Field(default=30.0, gt=0, le=600)
+    # Unacknowledged `index.vectors` results the consumer holds (it settles one at a time).
+    index_results_prefetch: int = Field(default=8, ge=1, le=64)
 
     redis_host: str
     redis_port: int = Field(default=6379, ge=1, le=65535)

@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 from typing import Protocol
 
-from common_lib.merkle import MerkleNodeView, MerkleUpdate
+from common_lib.merkle import LeafResult, MerkleNodeView, MerkleUpdate, Settled
 
 
 class MerkleIndex(Protocol):
@@ -24,8 +24,18 @@ class MerkleIndex(Protocol):
     ) -> None:
         """In one transaction, if the stored root is still `expected_root`: delete the
         subtrees of `update.deleted` with their chunks, store `update.nodes`, copy each
-        leaf's line range to its chunk, and set the new root. Afterwards every stored
+        leaf's line range to its chunk, and set the new root. A new leaf, or one whose
+        hash changed, is stored `pending` and loses any old vector; a leaf with the same
+        hash keeps its state. Afterwards every stored
         node must be reachable from the root. Raises `MerkleConflictError` when the root
         changed, and `InvalidValueError` for an unknown repository or a node left
         unreachable (an orphan or a cycle); either way nothing is written."""
+        ...
+
+    async def settle(self, result: LeafResult) -> Settled:
+        """In one transaction ordered against `apply`: if the leaf is still pending with
+        the result's hash and file, store its vector (with the leaf's own metadata) and
+        mark it `indexed`, or mark it `rejected` with the reason. A leaf settled before
+        is `already_settled`; an unknown, deleted or replaced leaf, or one of another
+        repository, is `not_pending` and nothing is written."""
         ...

@@ -26,21 +26,25 @@ sequenceDiagram
             G->>P: MerkleIndex.children(node_ids)
             G->>G: keep children whose hash differs or is unknown; keep leaves for moved line ranges
         end
+        G->>P: MerkleIndex.apply(new root, nodes, deleted ids): new or changed leaves pending
         G-->>C: MerkleDelta {ChunkRef[] to upload, deleted node ids}
         C->>G: ChunkUpload {changed chunks, new root}
         Note over G: indexing path as in context-awareness.md
-        G->>P: delete vectors and nodes of deleted ids (after all pages arrived)
-        G->>P: MerkleIndex.apply(new root, nodes) once every chunk settled
+        G->>P: MerkleIndex.settle(result) per indexer result (index.vectors consumer)
         G-->>C: IndexAck {server root hash, rejected}
     end
 ```
+
+The order above is the amended design (ADR-0018, slice 8c2): leaves needing a vector are persisted as pending, so nothing waits in a stream's memory. The store and the `index.vectors` consumer implement it from slice 8c2; the stream applies before the uploads from slice 8c3 (until then the sync still holds its update).
 
 ## Failure handling
 
 | Situation | Behaviour |
 |---|---|
-| Stream drops during a sync | The server forgets the sync; the old root stays; the next trigger starts from the root |
-| Indexer fails for some chunks | The new root is not applied; the next sync finds the same differences |
+| Stream drops during a sync | Before the apply: the server forgets the sync and the old root stays. After it: pending leaves stay pending and are requested again (slice 8c3) |
+| Indexer fails for some chunks | Their leaves stay pending; the server requests them again after the settle window (slice 8c3) |
+| A result arrives for content a later sync replaced or deleted, or for another repository | It writes nothing and is dead-lettered `not_pending` (it waits for any apply in progress first) |
+| The same result is delivered twice | It settles once; the repeat is acknowledged |
 | A chunk fails the server scrub re-check | It settles as rejected, is stored as a leaf without a vector and is not uploaded again |
 | Session key expired before indexing | The chunk goes to the dead-letter queue with a fixed reason; the next sync re-uploads it |
 | Report above 2 000 nodes or upload above 256 chunks | Paged (`last_page`); nothing is compared or deleted before a level's last page |

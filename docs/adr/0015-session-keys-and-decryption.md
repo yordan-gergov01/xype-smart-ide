@@ -93,7 +93,7 @@ Sequence diagram: `docs/flows/context-awareness.md`.
 2. It publishes the ciphertext, the `ChunkRef`s and the AAD inputs (message id, request id, field number, direction) to the `index.chunks` quorum queue on a new exchange `xype.index`, with a message TTL no longer than the key's remaining TTL. This extends ADR-0004: `index.chunks` and `index.vectors`, each with a `.dlq` partner on `xype.index.dlx`.
 3. The indexer fetches and unwraps `xype:sk:<key_id>`. It rebuilds the AAD, decrypts into `SecretBytes`, runs the server-side scrubber check (ADR-0019), embeds, and wipes the plaintext and the unwrapped key.
 4. It publishes only vectors, `ChunkRef`s, the repository id and the model id and version to `index.vectors`.
-5. A backend consumer writes them through `VectorStore` (ADR-0020) and updates the Merkle tree (ADR-0018).
+5. A backend consumer settles each result against the Merkle tree (ADR-0018, amended in slice 8c2): a vector is stored only for a leaf still `pending` with the result's hash and file, with the leaf's own metadata; anything else writes nothing and is dead-lettered `not_pending`.
 
 A chunk that fails the server scrub re-check is not embedded. It is reported back as rejected and counts as settled for the Merkle sync (ADR-0018, ADR-0019). A chunk whose key has expired, or whose tag fails to verify, goes to the dead-letter queue with a fixed reason. Dead-lettered messages hold ciphertext only and expire with their key (at most 24 hours); after that they could not be decrypted anyway. The client re-uploads the chunk on the next Merkle sync.
 
@@ -115,6 +115,11 @@ A chunk that fails the server scrub re-check is not embedded. It is reported bac
 - Cross-team negative tests for every message that names a repository.
 - After indexing, a privacy test scans RabbitMQ messages, Redis values and logs (slice 8): no plaintext and no unwrapped key.
 - ADR-0034's compose test asserts that only `backend` and `indexer` receive the KEK and join `keys`, that the indexer does not join `data`, and that `keystore` uses `noeviction`. A test checks the indexer's ACL.
+
+### Implementation notes (slice 8c2)
+
+- **Consumer.** `backend/messaging/vectors.py` consumes `index.vectors` as the backend's broker user, in the backend's lifespan, again after an outage (`common_lib.messaging.consume_forever`, shared with the indexer). Each result goes through `MerkleIndex.settle`: `settled`, `already_settled` (a repeated delivery, acknowledged) or `not_pending` (dead-lettered); a body that is not a result is `malformed`; a store outage or a held lock is a retry. Metric `xype_index_results_total{outcome}`.
+- **Forged or misrouted results.** Only the indexer's user can publish a result (slice 8a). Even so, a result names a repository and a leaf, and it is accepted only if that repository has that leaf pending with the same content hash under the same file; the stored row takes its file, lines and hash from the leaf, so only the vector comes from the message. A result for another repository writes nothing (unit and contract tests).
 
 ### Implementation notes (slice 8b)
 

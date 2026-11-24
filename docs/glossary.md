@@ -55,6 +55,10 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Scrub corpus**: the shared, synthetic test cases (`packages/scrub-rules/corpus.json`) that both scrubber implementations must reproduce exactly.
 
+**Pending leaf**: a Merkle leaf the server stored whose chunk has no result yet; the indexer's result settles it as `indexed` or `rejected` (ADR-0018, slice 8c2).
+
+**Settle**: to apply the indexer's result to its pending leaf, in one transaction ordered against `apply`; a result for a leaf that is no longer pending with its hash is `not_pending` (ADR-0018).
+
 **Scan process**: a child process of the indexer that runs the server's re-check on one chunk at a time, and is killed when a scan runs past its time (`indexer.scan`, ADR-0019).
 
 **ReDoS check**: the test that runs each scrub rule alone on adversarial inputs (`packages/scrub-rules/adversarial.json`) under a time bound, so no rule backtracks badly (ADR-0019).

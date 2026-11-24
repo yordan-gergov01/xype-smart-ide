@@ -8,9 +8,11 @@ The root itself is `repositories.merkle_root_hash`; its children have no parent
 import hashlib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import Literal
 
-from common_lib.domain import is_hmac_hex
+from common_lib.domain import ChunkRef, is_hmac_hex
 from common_lib.errors import InvalidValueError, XypeError
+from common_lib.vectors import VectorRecord
 
 # ADR-0018: at most 2 000 nodes per report, so at most that many parents per lookup.
 MAX_NODES_PER_CALL = 2000
@@ -20,6 +22,25 @@ MAX_NODES_PER_APPLY = 500_000
 # Line numbers are 4-byte integers in the inner hash and on the wire, and `int4` in
 # `code_chunks`, so at most 2^31 - 1.
 _MAX_LINE = 2**31 - 1
+
+
+# A stored leaf (ADR-0018, slice 8c2): `pending` until the indexer's result settles it,
+# then `indexed` (its vector is stored) or `rejected` (with a fixed reason, no vector).
+type LeafState = Literal["pending", "indexed", "rejected"]
+LEAF_STATES: tuple[LeafState, ...] = ("pending", "indexed", "rejected")
+# Why the indexer did not embed a chunk (ADR-0019): `unscannable`, the server check
+# could not run in time or on text that is not UTF-8; `unembeddable`, the model refused.
+type RejectionReason = Literal["secret_found", "too_large", "unscannable", "unembeddable"]
+REJECTION_REASONS: tuple[RejectionReason, ...] = (
+    "secret_found",
+    "too_large",
+    "unscannable",
+    "unembeddable",
+)
+# What settling a result did: `settled` it, found it `already_settled` (a repeated
+# delivery: acknowledged), or found no pending leaf with that hash (`not_pending`: a late
+# result for deleted or replaced content, or one for another repository).
+type Settled = Literal["settled", "already_settled", "not_pending"]
 
 
 class MerkleError(XypeError):
@@ -98,3 +119,19 @@ def inner_hash(children: Iterable[MerkleNodeUpdate]) -> str:
         if child.lines is not None:
             digest.update(child.lines[0].to_bytes(4, "big") + child.lines[1].to_bytes(4, "big"))
     return digest.hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class LeafResult:
+    """The indexer's result for one leaf: its vector, or the reason it has none. The
+    store checks `chunk` against the pending leaf and writes the leaf's own metadata."""
+
+    chunk: ChunkRef
+    embedded: VectorRecord | None = None
+    reason: RejectionReason | None = None
+
+    def __post_init__(self) -> None:
+        if (self.embedded is None) == (self.reason is None):
+            raise InvalidValueError("a result has a vector or a rejection reason")
+        if self.embedded is not None and self.embedded.chunk != self.chunk:
+            raise InvalidValueError("a vector belongs to its own chunk")
