@@ -31,9 +31,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.dal.indexing.settle import settle_leaf
 from backend.dal.transactions import transaction
-from common_lib.domain import is_hmac_hex
+from common_lib.domain import ChunkRef, is_hmac_hex
 from common_lib.errors import InvalidValueError
 from common_lib.merkle import (
+    MAX_CHUNKS_PER_UPLOAD,
     MAX_NODES_PER_CALL,
     LeafResult,
     MerkleConflictError,
@@ -114,6 +115,26 @@ class PgMerkleIndex:
             await _drop_stale_vectors(session, repository_id, nodes)
             await _move_lines(session, repository_id, nodes)
             await _check_reachable(session, repository_id)
+
+    async def pending(self, repository_id: uuid.UUID, refs: Sequence[ChunkRef]) -> frozenset[str]:
+        if len(refs) > MAX_CHUNKS_PER_UPLOAD:
+            raise InvalidValueError(f"at most {MAX_CHUNKS_PER_UPLOAD} chunks per upload")
+        wanted = {
+            (ref.leaf_node_id, ref.chunk_hash, ref.obfuscated_file_id)
+            for ref in refs
+            if ref.repository_id == repository_id
+        }
+        if not wanted:
+            return frozenset()
+        query = select(MerkleNode.node_id, MerkleNode.hash, MerkleNode.parent_id).where(
+            MerkleNode.repository_id == repository_id,
+            MerkleNode.node_id.in_([leaf_id for leaf_id, _, _ in wanted]),
+            MerkleNode.is_leaf,
+            MerkleNode.index_state == "pending",
+        )
+        async with transaction(self._sessions) as session:
+            rows = (await session.execute(query)).all()
+        return frozenset(row.node_id for row in rows if tuple(row) in wanted)
 
     async def settle(self, result: LeafResult) -> Settled:
         async with transaction(self._sessions) as session:

@@ -72,8 +72,9 @@ class KeyStore(Protocol):
     async def advance_nonce(self, key_id: str, direction: Direction, counter: int) -> None:
         """Records a received counter; `NonceError` unless it is above the highest seen.
 
-        Call it only after `CryptoBox.open` succeeded: an unauthenticated high counter
-        would otherwise use up the replay window and block the real stream."""
+        The gateway calls it when it accepts a payload, before any tag is verified (the
+        indexer may only read keys, ADR-0015): a forged high counter can use up the key,
+        but only the stream that owns the key can send one."""
 
     async def next_counter(self, key_id: str, direction: Direction) -> int:
         """Atomically allocates the next counter for a payload this server sends."""

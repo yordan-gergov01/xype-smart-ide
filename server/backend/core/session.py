@@ -9,7 +9,13 @@ from prometheus_client import CollectorRegistry
 from backend.core.settings import BackendSettings
 from backend.grpc import SessionStream, StreamMetrics, SyncFactory
 from backend.services.auth import AuthDependencies, AuthService
-from backend.services.indexing import MerkleIndex, MerkleSyncs, NodeBudget, SyncPolicy
+from backend.services.indexing import (
+    ChunkUploads,
+    MerkleIndex,
+    MerkleSyncs,
+    NodeBudget,
+    SyncPolicy,
+)
 from backend.services.session import (
     RepositoryAccess,
     SessionGate,
@@ -60,10 +66,17 @@ def session_stream(
     streams: StreamRegistry,
     *,
     syncs: SyncFactory,
+    uploads: ChunkUploads,
     clock: Clock,
     metrics: CollectorRegistry,
     tracer: Tracer,
 ) -> SessionStream:
     return SessionStream(
-        gate, streams, syncs=syncs, clock=clock, metrics=StreamMetrics(metrics), tracer=tracer
+        gate,
+        streams,
+        syncs=syncs,
+        uploads=uploads,
+        clock=clock,
+        metrics=StreamMetrics(metrics),
+        tracer=tracer,
     )
