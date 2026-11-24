@@ -9,6 +9,9 @@ from uuid import UUID
 
 from common_lib.errors import InvalidValueError
 
+# A model id or version: what settings, messages and the store accept alike.
+MODEL_PART_PATTERN = r"^[A-Za-z0-9._:/-]{1,128}$"
+
 type TaskType = Literal[
     "completion", "chat", "refactor", "tests", "docs", "lint", "implement_ticket"
 ]

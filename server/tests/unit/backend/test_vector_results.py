@@ -1,8 +1,10 @@
 """The `index.vectors` consumer (ADR-0018 amendment, slice 8c2) with fakes: a result
 settles its pending leaf once; a repeated delivery is acknowledged; a result for a leaf
 another repository has, or for content a later sync replaced, writes nothing and is
-dead-lettered `not_pending`; a store outage is a retry. Nothing it emits holds a vector."""
+dead-lettered `not_pending`; a vector of another model leaves its leaf pending; a store
+outage is a retry. Nothing it emits holds a vector."""
 
+import dataclasses
 import uuid
 
 import pytest
@@ -10,13 +12,14 @@ import structlog
 from opentelemetry.sdk.trace import TracerProvider
 from prometheus_client import CollectorRegistry
 from support.contracts import merkle as contract
+from support.contracts import vectors as vector_contract
 from support.merkle import FakeMerkleIndex
 
-from backend.messaging.vectors import ResultMetrics, VectorResults
+from backend.messaging.vectors import OUTCOMES, ResultMetrics, VectorResults
 from common_lib.errors import DependencyUnavailableError, InvalidValueError
 from common_lib.index_messages import EmbeddedChunk, RejectedChunk, WireChunkRef, encode
 from common_lib.merkle import LeafResult, MerkleUpdate, Settled
-from common_lib.messaging import Delivery
+from common_lib.messaging import REASONS, Delivery
 
 
 class World:
@@ -25,6 +28,7 @@ class World:
         self.registry = CollectorRegistry()
         self.results = VectorResults(
             self.index,
+            model=vector_contract.MODEL,
             metrics=ResultMetrics.create(self.registry),
             tracer=TracerProvider().get_tracer("test"),
         )
@@ -128,3 +132,25 @@ async def test_a_value_the_store_refuses_is_malformed() -> None:
     world = World(Refusing())
     assert await world.deliver(contract.result(world.repo, contract.TREE[2])) == "malformed"
     assert world.count("malformed") == 1
+
+
+async def test_a_vector_of_another_model_leaves_its_leaf_pending() -> None:
+    """Stored, it would never be found by a search with the backend's model, and the
+    leaf, settled, would never be embedded again (security review of slice 8c2)."""
+    world = await World().synced()
+    first = contract.TREE[2]
+    good = contract.result(world.repo, first)
+    assert good.embedded is not None
+    other = dataclasses.replace(good.embedded.model, model_version="other")
+    wrong = dataclasses.replace(good, embedded=dataclasses.replace(good.embedded, model=other))
+    assert await world.deliver(wrong) == "wrong_model"
+    assert await world.index.state(world.repo, first.node_id) == ("pending", None)
+    assert await world.index.vector(world.repo, first.node_id) is None
+    assert await world.deliver(good) is None  # the right model still settles it
+    assert world.count("wrong_model") == 1
+
+
+def test_every_dead_letter_outcome_is_a_known_reason() -> None:
+    """Else the bus files it as `handler_error`, and the DLQ cannot tell them apart."""
+    routine = {"settled", "already_settled"}
+    assert set(OUTCOMES) - routine <= REASONS

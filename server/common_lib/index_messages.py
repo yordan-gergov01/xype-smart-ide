@@ -18,7 +18,7 @@ from pydantic import (
     ValidationError,
 )
 
-from common_lib.domain import ChunkRef, ModelRef
+from common_lib.domain import MODEL_PART_PATTERN, ChunkRef, ModelRef
 from common_lib.errors import InvalidValueError
 from common_lib.merkle import LeafResult, RejectionReason
 from common_lib.vectors import EMBEDDING_DIMENSION, VectorRecord
@@ -33,7 +33,7 @@ type Hex = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 type Line = Annotated[int, Field(ge=1, le=2**31 - 1)]
 # Client-chosen ids (envelope message id, request id), as correlation ids are checked.
 type SafeId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,128}$")]
-type ModelPart = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._:/-]{1,128}$")]
+type ModelPart = Annotated[str, StringConstraints(pattern=MODEL_PART_PATTERN)]
 
 
 class _Message(BaseModel):

@@ -91,7 +91,11 @@ async def test_one_changed_chunk_gives_one_upload_after_depth_round_trips() -> N
         (L1, F, h(0xC9))
     ]
     assert delta.deleted == ()
-    assert world.index.roots[world.repo] == world.server.root  # held until uploads settle
+    # Applied before the delta went out: the changed leaf waits in the store, not here.
+    assert world.index.roots[world.repo] == changed.root
+    assert await world.index.state(world.repo, L1) == ("pending", None)
+    assert await world.index.state(world.repo, L2) == ("pending", None)  # never settled
+    assert world.syncs.active() == frozenset()
 
 
 async def test_a_deleted_file_takes_its_subtree_without_uploads() -> None:
@@ -244,6 +248,23 @@ async def test_a_failing_apply_refuses_the_sync_and_frees_its_nodes() -> None:
     with pytest.raises(RefusedError) as refused:
         await drive(world.syncs, without_g, await world.syncs.start(world.repo, without_g.root))
     assert refused.value.reason == SYNC_UNAVAILABLE
+    assert world.budget.used == 0
+
+
+async def test_no_upload_is_asked_for_before_its_leaf_is_stored() -> None:
+    """A delta goes out only after the apply that stores its leaves pending committed."""
+    world = World()
+    await world.settle()
+    changed = ClientTree({D: {F: [(L1, h(0xC9), (1, 10)), (L2, h(0xC2), (12, 20))]}, G: BASE[G]})
+
+    async def unavailable(*_: object) -> None:
+        raise DependencyUnavailableError("database")
+
+    world.index.apply = unavailable  # type: ignore[method-assign,assignment]
+    with pytest.raises(RefusedError) as refused:  # the refusal is the last step: no delta
+        await drive(world.syncs, changed, await world.syncs.start(world.repo, changed.root))
+    assert refused.value.reason == SYNC_UNAVAILABLE
+    assert world.stored()[L1].hash == h(0xC1)
     assert world.budget.used == 0
 
 
