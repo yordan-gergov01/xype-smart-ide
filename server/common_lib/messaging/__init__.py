@@ -22,6 +22,7 @@ from common_lib.messaging.bus import (
     retry_exchange,
     retry_queue,
 )
+from common_lib.messaging.consume import consume_forever
 from common_lib.messaging.rabbit import RabbitBus, connect_bus
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     "RabbitBus",
     "RetryableError",
     "connect_bus",
+    "consume_forever",
     "dead_letter_exchange",
     "dead_letter_queue",
     "exchange",

@@ -32,6 +32,9 @@ class Readiness:
     def ready(self) -> bool:
         return self.consuming and self.dependencies_ok
 
+    def set_consuming(self, consuming: bool) -> None:
+        self.consuming = consuming
+
 
 class HealthServer:
     def __init__(self, registry: CollectorRegistry, ready: Callable[[], bool]) -> None:
