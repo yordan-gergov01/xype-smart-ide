@@ -46,7 +46,7 @@ Written in Phase 9 planning (ahead of the phase, as the owner asked):
 
 | # | Title | Status | Brief |
 |---|---|---|---|
-| [0037](0037-weight-space-programming.md) | Fine-tuning arms: QLoRA and weight-space programming, gated on provider terms | Proposed (deviation) | §7 |
+| [0037](0037-weight-space-programming.md) | Fine-tuning by weight-space programming only, gated on provider terms | Proposed (deviation) | §7 |
 
 Planned (written in the phase that makes the decision):
 

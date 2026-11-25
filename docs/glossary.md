@@ -124,11 +124,11 @@ _Avoid_: master key
 
 **Backup model**: a faster, cheaper model used when the primary is slow, failing or over budget; its answers are labelled as such.
 
-**Weight-space programming**: improving a model by having another model read and edit its weights directly, without gradients; a gated arm of the fine-tuning experiment (ADR-0037).
+**Weight-space programming**: improving a model by having another model read and edit its weights directly, without gradients; the only fine-tuning method of Phase 9 (ADR-0037).
 
 **Forward-pass budget**: the fixed number of times the editing model may run the target model on the practice split during one weight-space session.
 
-**Practice split**: the samples an editing session or training run may see; held out by repository from the eval split, which only the harness sees.
+**Practice split**: the samples a weight-space editing session may see; held out by repository from the eval split, which only the harness sees.
 
 **Off-peak window**: the hours when a provider's prices are lower; non-urgent work may be deferred into them.
 
