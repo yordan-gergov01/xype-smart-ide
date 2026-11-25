@@ -47,7 +47,7 @@ Every phase ends at ⛔ with the report from brief §10. Exit criteria are in ad
 | **6 Connectors** | Template registry + "New project" wizard; rules packs; Jira + project-context fakes; "Implement ticket" flow | Ticket → agent → diff → Jira comment on mock model |
 | **7 Evals & observability** | Eval harness (completion, chat, agentic, mutation, negative prompts), CI eval gate with baselines; Grafana dashboards + alerts; admin dashboard; k6/Locust at 10× | Gate fails on injected regression; load test report |
 | **8 Fork & branding** | Code-OSS fork via VSCodium-style scripts, `product.json` (Open VSX, telemetry off), themes from design tokens, XYPE home, bundled `xype-ai`, Windows installer | Installer runs on a clean Windows machine; patch set documented and rebaseable |
-| **9 Fine-tuning** | Colab notebooks, QLoRA, GGUF export, honest eval report | Base vs fine-tuned numbers on the project's completion evals |
+| **9 Fine-tuning** | Weight-space programming only (ADR-0037, no QLoRA): isolated editor environment, forward-pass-budgeted sessions, GGUF export, honest eval report; hosted editor only once ADR-0037's gates hold | Base vs edited numbers on the project's completion evals |
 | **10 Paid-model go-live** (DeepSeek V4 via OpenRouter) | Only after explicit approval: re-verify providers, prices and ZDR; choose the provider allow-list | Budget caps active; eval per provider; cost report incl. OpenRouter vs DeepSeek-direct off-peak comparison |
 
 Dependency notes:
