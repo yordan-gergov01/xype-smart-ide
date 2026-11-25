@@ -87,7 +87,8 @@ class MerkleNode(Base):
     range and its indexing state (slice 8c2): `pending` from the apply that stored it
     with a new hash until the indexer's result settles it, then `indexed` (its
     `code_chunks` row is `leaf_node_id = node_id`) or `rejected` (a fixed reason, no
-    vector). `pending_since` and `request_attempts` drive the server's re-request."""
+    vector). `pending_since` (when the leaf was last asked for), `request_attempts` and
+    `published_at` (when its chunk last went to the indexer) drive the re-request."""
 
     __tablename__ = "merkle_nodes"
     __table_args__ = (
@@ -120,6 +121,9 @@ class MerkleNode(Base):
             name="pending_has_since",
         ),
         CheckConstraint("request_attempts >= 0", name="request_attempts_positive"),
+        CheckConstraint(
+            "published_at IS NULL OR index_state = 'pending'", name="published_only_pending"
+        ),
     )
 
     repository_id: Mapped[uuid.UUID] = mapped_column(
@@ -136,4 +140,5 @@ class MerkleNode(Base):
     rejection_reason: Mapped[str | None] = mapped_column(String(32))
     pending_since: Mapped[datetime | None]
     request_attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    published_at: Mapped[datetime | None]
     updated_at: Mapped[updated_at]

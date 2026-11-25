@@ -27,6 +27,12 @@ class SyncPolicy:
     max_restarts: int
     # Nodes one stream holds for its syncs at once; all streams share a `NodeBudget` too.
     max_nodes_per_stream: int = MAX_NODES_PER_APPLY
+    # The re-request (slice 8c3c): a pending leaf neither asked for nor published for
+    # this long is asked for again, at most `max_request_attempts` times, at most
+    # `rerequest_limit` leaves per sync.
+    settle_window_s: int = 900
+    max_request_attempts: int = 5
+    rerequest_limit: int = 1000
 
 
 @dataclass(frozen=True, slots=True)

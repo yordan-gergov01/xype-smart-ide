@@ -5,7 +5,14 @@ from collections.abc import Collection, Mapping, Sequence
 from typing import Protocol
 
 from common_lib.domain import ChunkRef
-from common_lib.merkle import LeafResult, MerkleNodeView, MerkleUpdate, Settled
+from common_lib.merkle import (
+    LeafResult,
+    MerkleNodeView,
+    MerkleUpdate,
+    Rerequest,
+    Settled,
+    UploadStates,
+)
 
 
 class MerkleIndex(Protocol):
@@ -33,10 +40,27 @@ class MerkleIndex(Protocol):
         unreachable (an orphan or a cycle); either way nothing is written."""
         ...
 
-    async def pending(self, repository_id: uuid.UUID, refs: Sequence[ChunkRef]) -> frozenset[str]:
-        """The leaf ids of `refs` stored in `repository_id` as pending leaves with the
-        ref's hash and file (its parent): the chunks an upload may hand to the indexer.
-        Another repository's refs never match. At most `MAX_CHUNKS_PER_UPLOAD` refs."""
+    async def upload_states(
+        self, repository_id: uuid.UUID, refs: Sequence[ChunkRef], *, window_s: int
+    ) -> UploadStates:
+        """Of the leaves `refs` name in `repository_id` with the ref's hash and file (its
+        parent): the pending ones not published in the last `window_s` seconds, which an
+        upload may hand to the indexer, and the rejected ones with their reasons. Another
+        repository's refs never match. At most `MAX_CHUNKS_PER_UPLOAD` refs."""
+        ...
+
+    async def mark_published(self, repository_id: uuid.UUID, leaf_ids: Collection[str]) -> None:
+        """The pending ones of `leaf_ids` were just handed to the indexer. At most
+        `MAX_CHUNKS_PER_UPLOAD` ids."""
+        ...
+
+    async def rerequest(
+        self, repository_id: uuid.UUID, *, window_s: int, max_attempts: int, limit: int
+    ) -> Rerequest:
+        """Asks again for at most `limit` pending leaves, the oldest first, that were
+        neither asked for nor published in the last `window_s` seconds and were asked
+        for fewer than `max_attempts` times: each counts one attempt more and is asked
+        for now. A leaf another transaction holds is left for the next time."""
         ...
 
     async def settle(self, result: LeafResult) -> Settled:

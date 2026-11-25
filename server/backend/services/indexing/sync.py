@@ -9,6 +9,12 @@ never be taken for deletions. When only leaves are left, the changes are applied
 nothing waits in the stream's memory for a vector (ADR-0018 amendment, slice 8c3a); the
 sync ends either way. Ids and counts only are logged.
 
+Every sync that ends, also one that found the roots equal, asks again for the stale
+pending leaves of its repository (slice 8c3c): those the indexer never settled (a lost
+upload, `redelivery_limit`, `wrong_model`), a bounded number of times
+(`MerkleIndex.rerequest`). They ride on the `SyncDelta` pages. A store outage then only
+postpones them to the next sync.
+
 Every node a sync holds is counted against the stream's share and a `NodeBudget` that
 all streams of the process share, and released when the sync ends or the stream closes.
 """
@@ -47,6 +53,7 @@ from common_lib.merkle import (
     MerkleNodeUpdate,
     MerkleNodeView,
     MerkleUpdate,
+    Rerequest,
     inner_hash,
 )
 
@@ -133,7 +140,7 @@ class MerkleSyncs:
         server_root = await self._index.root(repository_id)
         self._drop(repository_id)
         if client_root is not None and client_root == server_root:
-            return []
+            return await self._ended(repository_id, [], [])
         deadline = self._clock.now() + timedelta(seconds=self._policy.deadline_s)
         sync = _Sync(repository_id, server_root, deadline, restarts)
         self._syncs[repository_id] = sync
@@ -187,7 +194,7 @@ class MerkleSyncs:
                 self._refuse(sync, SYNC_MISMATCH)
         if None in sync.expected and sync.client_root == sync.expected_root:
             self._drop(sync.repository_id)
-            return []
+            return await self._ended(sync.repository_id, [], [])
         stored = await self._index.children(sync.repository_id, list(sync.expected))
         for parent, children in sync.received.items():
             gone = _compare(sync, parent, children, stored[parent])
@@ -229,9 +236,36 @@ class MerkleSyncs:
             deleted=len(update.deleted),
             upload=len(sync.upload),
         )
-        if sync.upload:
-            return _deltas(sync, str(uuid7(self._clock.now())))
-        return [SyncDone(sync.request_id, sync.repository_id, sync.client_root)]
+        steps = await self._ended(sync.repository_id, sync.upload, sync.deleted)
+        return steps or [SyncDone(sync.request_id, sync.repository_id, sync.client_root)]
+
+    async def _ended(
+        self, repository_id: uuid.UUID, upload: list[ChunkRef], deleted: list[str]
+    ) -> list[SyncStep]:
+        """The delta pages of a sync that ended, with the stale leaves asked for again;
+        none when nothing is to be uploaded (the caller then answers `SyncDone`)."""
+        policy = self._policy
+        try:
+            asked = await self._index.rerequest(
+                repository_id,
+                window_s=policy.settle_window_s,
+                max_attempts=policy.max_request_attempts,
+                limit=policy.rerequest_limit,
+            )
+        except DependencyUnavailableError:
+            logger.warning("sync.rerequest_postponed", repository_id=str(repository_id))
+            asked = Rerequest()
+        if asked.refs:
+            logger.info(
+                "sync.rerequested",
+                repository_id=str(repository_id),
+                leaves=len(asked.refs),
+                last_attempt=asked.last,
+            )
+        upload = [*upload, *asked.refs]
+        if not upload:
+            return []
+        return _deltas(repository_id, str(uuid7(self._clock.now())), upload, deleted)
 
     def _reserve(self, sync: _Sync, count: int) -> None:
         held = sum(s.held for s in self._syncs.values())
@@ -288,15 +322,17 @@ def _chunk(repository_id: uuid.UUID, file_id: str, leaf: MerkleNodeUpdate) -> Ch
     return ChunkRef(repository_id, file_id, leaf.lines[0], leaf.lines[1], leaf.hash, leaf.node_id)
 
 
-def _deltas(sync: _Sync, request_id: str) -> list[SyncStep]:
+def _deltas(
+    repository_id: uuid.UUID, request_id: str, upload: list[ChunkRef], deleted: list[str]
+) -> list[SyncStep]:
     """The uploads and deletions in pages; deletions ride on the first pages."""
-    pages = max(1, -(-max(len(sync.upload), len(sync.deleted)) // DELTA_PAGE))
+    pages = max(1, -(-max(len(upload), len(deleted)) // DELTA_PAGE))
     return [
         SyncDelta(
             request_id,
-            sync.repository_id,
-            tuple(sync.upload[n * DELTA_PAGE : (n + 1) * DELTA_PAGE]),
-            tuple(sync.deleted[n * DELTA_PAGE : (n + 1) * DELTA_PAGE]),
+            repository_id,
+            tuple(upload[n * DELTA_PAGE : (n + 1) * DELTA_PAGE]),
+            tuple(deleted[n * DELTA_PAGE : (n + 1) * DELTA_PAGE]),
         )
         for n in range(pages)
     ]

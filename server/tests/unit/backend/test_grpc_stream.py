@@ -333,7 +333,11 @@ async def test_a_failed_read_ends_the_stream_and_logs_only_the_type(
             world.streams,
             syncs=sync_factory(world.settings, world.merkle, world.clock),
             uploads=ChunkUploads(
-                world.merkle, world.auth.deps.keys, RecordingBus().publisher(), clock=world.clock
+                world.merkle,
+                world.auth.deps.keys,
+                RecordingBus().publisher(),
+                settle_window_s=900,
+                clock=world.clock,
             ),
             clock=world.clock,
             metrics=StreamMetrics(CollectorRegistry()),

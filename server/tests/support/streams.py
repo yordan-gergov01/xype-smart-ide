@@ -131,7 +131,9 @@ async def stream_server(
     tracer = TracerProvider().get_tracer("test")
     metrics = StreamMetrics(world.registry)
     syncs = sync_factory(settings, world.merkle, clock)
-    uploads = ChunkUploads(world.merkle, world.auth.deps.keys, world.bus.publisher(), clock=clock)
+    uploads = ChunkUploads(
+        world.merkle, world.auth.deps.keys, world.bus.publisher(), settle_window_s=900, clock=clock
+    )
     handler = SessionStream(
         gate,
         world.streams,

@@ -207,9 +207,19 @@ class MerkleIndex(Protocol):
     ) -> None:
         """Compare-and-set on the root; raises MerkleConflictError when it moved. New or
         changed leaves are stored pending (slice 8c2)."""
-    async def pending(self, repository_id: UUID, refs: Sequence[ChunkRef]) -> frozenset[str]:
-        """Leaf ids of refs stored pending with their hash and file (slice 8c3b); at most
-        256 refs, another repository's never match."""
+    async def upload_states(
+        self, repository_id: UUID, refs: Sequence[ChunkRef], *, window_s: int,
+    ) -> UploadStates:
+        """Of refs matching a stored leaf's hash and file: the pending ones not published
+        within the window, and the rejected ones with their reasons (slices 8c3b, 8c3c);
+        at most 256 refs, another repository's never match."""
+    async def mark_published(self, repository_id: UUID, leaf_ids: Collection[str]) -> None:
+        """The pending ones of leaf_ids just went to the indexer (slice 8c3c)."""
+    async def rerequest(
+        self, repository_id: UUID, *, window_s: int, max_attempts: int, limit: int,
+    ) -> Rerequest:
+        """Asks again for the oldest stale pending leaves, one attempt more each; how many
+        were asked for the last time (slice 8c3c)."""
     async def settle(self, result: LeafResult) -> Settled:
         """The indexer's result for one pending leaf (slice 8c2): settled,
         already_settled or not_pending. The vector consumer refuses a vector of
@@ -229,7 +239,8 @@ class MerkleSyncs:
     async def poll(self) -> list[SyncStep]: ...
     async def report(self, report: TreeReport) -> list[SyncStep]: ...
 # SyncStep = SyncRequest | SyncDelta | SyncDone; a SyncDelta goes out only after the apply
-# that stored its leaves pending committed, and ends the sync (slice 8c3a).
+# that stored its leaves pending committed, and ends the sync (slice 8c3a). Every sync that
+# ends also carries the stale pending leaves MerkleIndex.rerequest asked for (slice 8c3c).
 
 class ChunkPublisher(Protocol):   # backend/messaging/chunks.py: BusChunkPublisher
     async def publish(self, job: ChunkJob, *, correlation_id: str, ttl_ms: int) -> None: ...
@@ -238,7 +249,9 @@ class ChunkUploads:
     """backend/services/indexing/upload.py (slice 8c3b): checks an Upload against the
     stream's key and repository, keeps only pending leaves, advances every nonce counter
     (rising in message order) before any publish, then publishes the jobs with the key's
-    remaining life as TTL; a broker or store failure refuses only the upload."""
+    remaining life as TTL; a broker or store failure refuses only the upload. A leaf
+    published within the settle window is acked without a second publish; rejected
+    chunks come back in IndexAck.rejected (slice 8c3c)."""
     async def accept(
         self, session: OpenSession, upload: Upload, correlation_id: str
     ) -> UploadAccepted: ...

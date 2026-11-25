@@ -6,8 +6,8 @@ The root itself is `repositories.merkle_root_hash`; its children have no parent
 """
 
 import hashlib
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Literal
 
 from common_lib.domain import ChunkRef, is_hmac_hex
@@ -137,3 +137,22 @@ class LeafResult:
             raise InvalidValueError("a result has a vector or a rejection reason")
         if self.embedded is not None and self.embedded.chunk != self.chunk:
             raise InvalidValueError("a vector belongs to its own chunk")
+
+
+@dataclass(frozen=True, slots=True)
+class UploadStates:
+    """What the store holds for the leaves an upload names (slice 8c3c): `pending`, the
+    ones to publish (pending with the ref's hash and file, and not published within
+    the settle window); `rejected`, the ones settled as rejected, with their reasons."""
+
+    pending: frozenset[str] = frozenset()
+    rejected: Mapping[str, RejectionReason] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class Rerequest:
+    """Stale pending leaves asked for again (slice 8c3c): their refs, and how many of
+    them were asked for the last time (they stay pending afterwards)."""
+
+    refs: tuple[ChunkRef, ...] = ()
+    last: int = 0

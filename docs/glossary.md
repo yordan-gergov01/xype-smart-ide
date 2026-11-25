@@ -30,6 +30,10 @@ _Avoid_: shared rules (means the scrub rules in `packages/scrub-rules/`)
 
 **Chunk**: an AST-delimited piece of code (function, class, block) and the unit of indexing and retrieval.
 
+**Re-request**: a sync that ends asks the client again for its repository's stale pending leaves, those neither asked for nor published within the settle window, a bounded number of times (ADR-0018, slice 8c3c).
+
+**Settle window**: how long a pending leaf may wait for the indexer's result after it was asked for or published before it is asked for again (`INDEX_SETTLE_WINDOW_S`, 900 s).
+
 **Chunk upload**: a `ChunkUpload` the gateway accepts: only chunks of pending leaves with the same hash and file go to the indexer, each after its nonce counter advanced; `IndexAck` then means accepted, not indexed (ADR-0015, slice 8c3b).
 _Avoid_: snippet (reserved for the code around the cursor), fragment
 

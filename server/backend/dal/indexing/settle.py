@@ -21,6 +21,9 @@ from common_lib.merkle import LeafResult, Settled
 from common_lib.models import CodeChunk, MerkleNode, Repository
 from common_lib.vectors import VectorRecord
 
+# A settled leaf is neither waiting for a result nor in flight.
+_NOT_PENDING = {"pending_since": None, "published_at": None}
+
 
 async def settle_leaf(session: AsyncSession, result: LeafResult) -> Settled:
     chunk = result.chunk
@@ -67,7 +70,7 @@ async def settle_leaf(session: AsyncSession, result: LeafResult) -> Settled:
         .values(
             index_state="indexed" if result.embedded is not None else "rejected",
             rejection_reason=result.reason,
-            pending_since=None,
+            **_NOT_PENDING,
             updated_at=func.now(),
         )
     )

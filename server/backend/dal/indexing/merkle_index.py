@@ -29,6 +29,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from backend.dal.indexing.pending import mark_published, rerequest, upload_states
 from backend.dal.indexing.settle import settle_leaf
 from backend.dal.transactions import transaction
 from common_lib.domain import ChunkRef, is_hmac_hex
@@ -41,7 +42,9 @@ from common_lib.merkle import (
     MerkleNodeUpdate,
     MerkleNodeView,
     MerkleUpdate,
+    Rerequest,
     Settled,
+    UploadStates,
 )
 from common_lib.models import CodeChunk, MerkleNode, Repository
 
@@ -116,25 +119,30 @@ class PgMerkleIndex:
             await _move_lines(session, repository_id, nodes)
             await _check_reachable(session, repository_id)
 
-    async def pending(self, repository_id: uuid.UUID, refs: Sequence[ChunkRef]) -> frozenset[str]:
+    async def upload_states(
+        self, repository_id: uuid.UUID, refs: Sequence[ChunkRef], *, window_s: int
+    ) -> UploadStates:
         if len(refs) > MAX_CHUNKS_PER_UPLOAD:
             raise InvalidValueError(f"at most {MAX_CHUNKS_PER_UPLOAD} chunks per upload")
-        wanted = {
-            (ref.leaf_node_id, ref.chunk_hash, ref.obfuscated_file_id)
-            for ref in refs
-            if ref.repository_id == repository_id
-        }
-        if not wanted:
-            return frozenset()
-        query = select(MerkleNode.node_id, MerkleNode.hash, MerkleNode.parent_id).where(
-            MerkleNode.repository_id == repository_id,
-            MerkleNode.node_id.in_([leaf_id for leaf_id, _, _ in wanted]),
-            MerkleNode.is_leaf,
-            MerkleNode.index_state == "pending",
-        )
         async with transaction(self._sessions) as session:
-            rows = (await session.execute(query)).all()
-        return frozenset(row.node_id for row in rows if tuple(row) in wanted)
+            await set_timeouts(session, self._timeouts)
+            return await upload_states(session, repository_id, refs, window_s)
+
+    async def mark_published(self, repository_id: uuid.UUID, leaf_ids: Collection[str]) -> None:
+        if len(leaf_ids) > MAX_CHUNKS_PER_UPLOAD:
+            raise InvalidValueError(f"at most {MAX_CHUNKS_PER_UPLOAD} chunks per upload")
+        async with transaction(self._sessions) as session:
+            await set_timeouts(session, self._timeouts)
+            await mark_published(session, repository_id, leaf_ids)
+
+    async def rerequest(
+        self, repository_id: uuid.UUID, *, window_s: int, max_attempts: int, limit: int
+    ) -> Rerequest:
+        async with transaction(self._sessions) as session:
+            await set_timeouts(session, self._timeouts)
+            return await rerequest(
+                session, repository_id, window_s=window_s, max_attempts=max_attempts, limit=limit
+            )
 
     async def settle(self, result: LeafResult) -> Settled:
         async with transaction(self._sessions) as session:
@@ -229,7 +237,8 @@ async def _store(
     session: AsyncSession, repository_id: uuid.UUID, nodes: Sequence[MerkleNodeUpdate]
 ) -> None:
     """A new leaf, or one whose hash changed, is `pending` (its chunk must be embedded); a
-    leaf whose hash is unchanged keeps its state, reason and re-request count. Inner
+    leaf whose hash is unchanged keeps its state, reason, re-request count and publish
+    time. Inner
     nodes have no state."""
     rows: list[dict[str, Any]] = [  # reason: Any - column values
         {
@@ -265,6 +274,7 @@ async def _store(
                 "rejection_reason": kept(MerkleNode.rejection_reason, None),
                 "pending_since": kept(MerkleNode.pending_since, new.pending_since),
                 "request_attempts": kept(MerkleNode.request_attempts, 0),
+                "published_at": kept(MerkleNode.published_at, None),
                 "updated_at": func.now(),
             },
         )
