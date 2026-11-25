@@ -41,8 +41,10 @@ The order above is the amended design (ADR-0018, slice 8c2): leaves needing a ve
 
 | Situation | Behaviour |
 |---|---|
-| Stream drops during a sync | Before the apply: the server forgets the sync and the old root stays. After it: pending leaves stay pending and are requested again (slice 8c3) |
-| Indexer fails for some chunks | Their leaves stay pending; the server requests them again after the settle window (slice 8c3) |
+| Stream drops during a sync | Before the apply: the server forgets the sync and the old root stays. After it: pending leaves stay pending and are asked for again by a later sync after the settle window (slice 8c3c) |
+| Indexer fails for some chunks | Their leaves stay pending; a later sync asks for them again after the settle window, at most `INDEX_REREQUEST_MAX_ATTEMPTS` times; then they stay pending until their content changes (slice 8c3c) |
+| An upload repeats a chunk the indexer has (published within the settle window) | It is acknowledged without a second publish |
+| An upload names a chunk rejected before | `IndexAck.rejected` reports it with its stored reason |
 | A result arrives for content a later sync replaced or deleted, or for another repository | It writes nothing and is dead-lettered `not_pending` (it waits for any apply in progress first) |
 | An upload names a chunk that is no longer pending (settled, replaced, deleted) | It is left out without an error; its nonce counter is spent like the others |
 | An upload replays a nonce counter, or names another repository in a nested `ChunkRef` | It is refused (`nonce already used`, `repository not accessible`); every counter is checked before any publish, so nothing of it is published |

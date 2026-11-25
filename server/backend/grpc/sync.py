@@ -6,12 +6,12 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from xype.v1 import common_pb2, index_pb2, session_pb2
+from xype.v1 import index_pb2, session_pb2
 
-from backend.grpc.messages import response
+from backend.grpc.messages import chunk_ref, response
 from backend.services.indexing import SyncDelta, SyncDone, SyncRequest, SyncStep, TreeReport
 from backend.services.session import MALFORMED, RefusedError
-from common_lib.domain import ChunkRef, is_hmac_hex
+from common_lib.domain import is_hmac_hex
 from common_lib.errors import InvalidValueError
 from common_lib.merkle import MAX_NODES_PER_CALL, MerkleNodeUpdate
 
@@ -54,16 +54,6 @@ def tree_report(message: index_pb2.MerkleTreeReport) -> TreeReport:
     )
 
 
-def _chunk(ref: ChunkRef) -> common_pb2.ChunkRef:
-    return common_pb2.ChunkRef(
-        repository_id=str(ref.repository_id),
-        obfuscated_file_id=ref.obfuscated_file_id,
-        lines=common_pb2.LineRange(start=ref.line_start, end=ref.line_end),
-        chunk_hash=ref.chunk_hash,
-        leaf_node_id=ref.leaf_node_id,
-    )
-
-
 def _body(step: SyncStep) -> session_pb2.SessionResponse:
     match step:
         case SyncRequest():
@@ -78,7 +68,7 @@ def _body(step: SyncStep) -> session_pb2.SessionResponse:
             delta = index_pb2.MerkleDelta(
                 request_id=step.request_id,
                 repository_id=str(step.repository_id),
-                upload=[_chunk(ref) for ref in step.upload],
+                upload=[chunk_ref(ref) for ref in step.upload],
                 deleted_node_ids=step.deleted,
             )
             return session_pb2.SessionResponse(merkle_delta=delta)

@@ -19,6 +19,7 @@ from common_lib.merkle import (
     MerkleNodeView,
     MerkleUpdate,
     RejectionReason,
+    Rerequest,
 )
 from common_lib.vectors import VectorRecord
 from support.contracts import vectors as vector_contract
@@ -249,21 +250,72 @@ async def check_only_pending_leaves_with_their_hash_and_file_may_be_uploaded(
     repo, other = repositories
     await index.apply(repo, None, MerkleUpdate(ROOT_1, TREE))
     first, second, third = TREE[2], TREE[3], TREE[5]
-    assert await index.settle(result(repo, third)) == "settled"
+    assert await index.settle(result(repo, third, reason="secret_found")) == "settled"
     stale = leaf(L2, F, 99, (12, 20))  # a hash the store does not have
     refs = [
         ref(repo, first),
         ref(repo, stale),
         ref(repo, second, file_id=G),  # another file
-        ref(repo, third),  # indexed, no longer pending
+        ref(repo, third),  # rejected, no longer pending
         ref(other, first),  # another repository's ref
         ChunkRef(repo, D, 1, 1, TREE[1].hash, F),  # an inner node
     ]
-    assert await index.pending(repo, refs) == {L1}
-    assert await index.pending(other, [ref(other, first)]) == frozenset()
-    assert await index.pending(repo, []) == frozenset()
+    states = await index.upload_states(repo, refs, window_s=600)
+    assert states.pending == {L1}
+    assert dict(states.rejected) == {L3: "secret_found"}
+    assert (await index.upload_states(other, [ref(other, first)], window_s=600)).pending == set()
+    assert (await index.upload_states(repo, [], window_s=600)).pending == set()
     with pytest.raises(InvalidValueError):
-        await index.pending(repo, [ref(repo, first)] * (MAX_CHUNKS_PER_UPLOAD + 1))
+        await index.upload_states(
+            repo, [ref(repo, first)] * (MAX_CHUNKS_PER_UPLOAD + 1), window_s=0
+        )
+
+
+async def check_a_published_leaf_is_not_uploaded_again_within_the_window(
+    index: MerkleIndex, repositories: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    repo, other = repositories
+    await index.apply(repo, None, MerkleUpdate(ROOT_1, TREE))
+    refs = [ref(repo, TREE[2]), ref(repo, TREE[3])]
+    await index.mark_published(repo, [L1])
+    await index.mark_published(other, [L2])  # another repository's: nothing
+    assert (await index.upload_states(repo, refs, window_s=600)).pending == {L2}
+    assert (await index.upload_states(repo, refs, window_s=0)).pending == {L1, L2}
+    assert await index.settle(result(repo, TREE[2])) == "settled"  # forgets the publish
+    assert (await index.upload_states(repo, refs, window_s=0)).pending == {L2}
+
+
+async def check_stale_pending_leaves_are_asked_for_again_a_bounded_number_of_times(
+    index: MerkleIndex, repositories: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    repo, other = repositories
+    await index.apply(repo, None, MerkleUpdate(ROOT_1, TREE))
+    assert await index.settle(result(repo, TREE[5])) == "settled"
+    # Within the window (just stored): nothing yet.
+    assert await index.rerequest(repo, window_s=600, max_attempts=2, limit=10) == Rerequest()
+    asked = await index.rerequest(repo, window_s=0, max_attempts=2, limit=10)
+    assert (asked.refs, asked.last) == ((ref(repo, TREE[2]), ref(repo, TREE[3])), 0)
+    # Asked for just now: not again within the window.
+    assert await index.rerequest(repo, window_s=600, max_attempts=2, limit=10) == Rerequest()
+    asked = await index.rerequest(repo, window_s=0, max_attempts=2, limit=10)
+    assert (asked.refs, asked.last) == ((ref(repo, TREE[2]), ref(repo, TREE[3])), 2)
+    # Out of attempts: they stay pending, and are not asked for any more.
+    assert await index.rerequest(repo, window_s=0, max_attempts=2, limit=10) == Rerequest()
+    assert (await index.upload_states(repo, [ref(repo, TREE[3])], window_s=0)).pending == {L2}
+    assert await index.rerequest(other, window_s=0, max_attempts=2, limit=10) == Rerequest()
+
+
+async def check_a_rerequest_takes_the_oldest_leaves_up_to_its_limit(
+    index: MerkleIndex, repositories: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    repo, _ = repositories
+    await index.apply(repo, None, MerkleUpdate(ROOT_1, TREE))
+    first = await index.rerequest(repo, window_s=0, max_attempts=5, limit=2)
+    second = await index.rerequest(repo, window_s=0, max_attempts=5, limit=2)
+    assert (len(first.refs), len(second.refs)) == (2, 2)
+    # The one left out the first time is now the oldest, so it is asked for next.
+    left_out = {L1, L2, L3} - {r.leaf_node_id for r in first.refs}
+    assert left_out <= {r.leaf_node_id for r in second.refs}
 
 
 CHECKS: tuple[Check, ...] = (
@@ -278,4 +330,7 @@ CHECKS: tuple[Check, ...] = (
     check_a_result_must_match_its_leaf,
     check_an_unchanged_leaf_keeps_its_state,
     check_only_pending_leaves_with_their_hash_and_file_may_be_uploaded,
+    check_a_published_leaf_is_not_uploaded_again_within_the_window,
+    check_stale_pending_leaves_are_asked_for_again_a_bounded_number_of_times,
+    check_a_rerequest_takes_the_oldest_leaves_up_to_its_limit,
 )

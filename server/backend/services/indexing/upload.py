@@ -3,7 +3,10 @@
 The gateway hands a chunk to the indexer only for a leaf the store holds pending with
 the chunk's hash and file. So nothing is published before the `apply` that asked for it
 committed, and a client cannot spend scan processes on chunks nobody asked for; a chunk
-no longer pending (settled, replaced, deleted) is left out without an error.
+no longer pending (settled, replaced, deleted) is left out without an error. A leaf
+published within the settle window is left out too (slice 8c3c): the indexer has it, so
+a repeated upload costs no second scan; after the window the re-request asks for it
+again. Chunks settled as rejected are reported back with their stored reasons.
 
 The nonce counters of an upload strictly rise in message order, and every one of them,
 pending chunk or not, is advanced in the key store before anything is published: the
@@ -33,7 +36,7 @@ from common_lib.clock import Clock
 from common_lib.domain import ChunkRef
 from common_lib.errors import DependencyUnavailableError
 from common_lib.index_messages import ChunkJob, WireChunkRef
-from common_lib.merkle import MAX_CHUNKS_PER_UPLOAD
+from common_lib.merkle import MAX_CHUNKS_PER_UPLOAD, RejectionReason
 from common_lib.security import (
     SESSION_KEY_TTL_SECONDS,
     Direction,
@@ -75,6 +78,8 @@ class UploadAccepted:
     repository_id: uuid.UUID
     root: str | None
     published: int
+    # Chunks of this upload the indexer rejected before, with their stored reasons.
+    rejected: tuple[tuple[ChunkRef, RejectionReason], ...] = ()
 
 
 class ChunkPublisher(Protocol):
@@ -87,11 +92,18 @@ class ChunkUploads:
     """Shared by every stream; holds nothing between uploads."""
 
     def __init__(
-        self, index: MerkleIndex, keys: KeyStore, publisher: ChunkPublisher, *, clock: Clock
+        self,
+        index: MerkleIndex,
+        keys: KeyStore,
+        publisher: ChunkPublisher,
+        *,
+        settle_window_s: int,
+        clock: Clock,
     ) -> None:
         self._index = index
         self._keys = keys
         self._publisher = publisher
+        self._window_s = settle_window_s
         self._clock = clock
 
     async def accept(
@@ -99,35 +111,40 @@ class ChunkUploads:
     ) -> UploadAccepted:
         counters = _check(session, upload)
         ttl_ms = self._ttl_ms(session.key)
+        refs = [chunk.ref for chunk in upload.chunks]
         try:
             # Read first: once anything is published, no store failure may refuse the
             # upload, or the client would send it all again.
+            states = await self._index.upload_states(
+                upload.repository_id, refs, window_s=self._window_s
+            )
             root = await self._index.root(upload.repository_id)
-            published = await self._publish(session, upload, counters, ttl_ms, correlation_id)
+            jobs = [
+                _job(session, upload, c)
+                for c in upload.chunks
+                if c.ref.leaf_node_id in states.pending
+            ]
+            await self._advance(session, counters)
+            for job in jobs:
+                await self._publisher.publish(job, correlation_id=correlation_id, ttl_ms=ttl_ms)
         except DependencyUnavailableError:
             raise RefusedError(UPLOAD_UNAVAILABLE) from None
+        await self._mark(upload.repository_id, states.pending)
         logger.info(
             "upload.accepted",
             repository_id=str(upload.repository_id),
             chunks=len(upload.chunks),
-            published=published,
+            published=len(jobs),
+            rejected=len(states.rejected),
         )
-        return UploadAccepted(upload.request_id, upload.repository_id, root, published)
+        rejected = tuple(
+            (ref, states.rejected[ref.leaf_node_id])
+            for ref in refs
+            if ref.leaf_node_id in states.rejected
+        )
+        return UploadAccepted(upload.request_id, upload.repository_id, root, len(jobs), rejected)
 
-    async def _publish(
-        self,
-        session: OpenSession,
-        upload: Upload,
-        counters: list[int],
-        ttl_ms: int,
-        correlation_id: str,
-    ) -> int:
-        pending = await self._index.pending(upload.repository_id, [c.ref for c in upload.chunks])
-        jobs = [
-            _job(session, upload, chunk)
-            for chunk in upload.chunks
-            if chunk.ref.leaf_node_id in pending
-        ]
+    async def _advance(self, session: OpenSession, counters: list[int]) -> None:
         for counter in counters:
             try:
                 await self._keys.advance_nonce(
@@ -137,9 +154,16 @@ class ChunkUploads:
                 raise RefusedError(UPLOAD_NONCE) from None
             except KeyNotFoundError:
                 raise RefusedError(KEY_UNUSABLE) from None
-        for job in jobs:
-            await self._publisher.publish(job, correlation_id=correlation_id, ttl_ms=ttl_ms)
-        return len(jobs)
+
+    async def _mark(self, repository_id: uuid.UUID, published: frozenset[str]) -> None:
+        """The jobs are on the broker: a store failure here must not refuse the upload.
+        Unmarked, a repeat of it within the window is published again and settles once."""
+        if not published:
+            return
+        try:
+            await self._index.mark_published(repository_id, published)
+        except DependencyUnavailableError:
+            logger.warning("upload.mark_failed", repository_id=str(repository_id))
 
     def _ttl_ms(self, key: SessionKeyRecord) -> int:
         """The key's remaining life in the key store: a job never outlives its key."""

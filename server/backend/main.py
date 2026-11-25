@@ -28,7 +28,7 @@ from backend.core.connections import (
     create_keystore_client,
     create_redis_client,
 )
-from backend.core.session import session_gate, session_stream, sync_factory
+from backend.core.session import chunk_uploads, session_gate, session_stream, sync_factory
 from backend.core.settings import BackendSettings
 from backend.dal.auth import RedisRevocationSubscriber
 from backend.dal.health import DatabaseProbe, RedisProbe
@@ -40,7 +40,7 @@ from backend.messaging.health import BrokerProbe
 from backend.messaging.vectors import ResultMetrics, VectorResults
 from backend.services.auth import AuthDependencies, RevocationSubscriber
 from backend.services.health import DependencyProbe, HealthService
-from backend.services.indexing import ChunkUploads, MerkleIndex
+from backend.services.indexing import MerkleIndex
 from backend.services.session import RepositoryAccess, StreamRegistry, listen_for_revocations
 from common_lib.clock import Clock, SystemClock
 from common_lib.logging_config import configure_logging
@@ -129,7 +129,7 @@ def create_app(
         gate,
         streams,
         syncs=sync_factory(settings, merkle, clock),
-        uploads=ChunkUploads(merkle, auth.keys, publisher, clock=clock),
+        uploads=chunk_uploads(settings, merkle, auth.keys, publisher, clock),
         clock=clock,
         metrics=registry,
         tracer=tracer,

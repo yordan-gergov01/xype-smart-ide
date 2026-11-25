@@ -10,6 +10,7 @@ from backend.core.settings import BackendSettings
 from backend.grpc import SessionStream, StreamMetrics, SyncFactory
 from backend.services.auth import AuthDependencies, AuthService
 from backend.services.indexing import (
+    ChunkPublisher,
     ChunkUploads,
     MerkleIndex,
     MerkleSyncs,
@@ -23,6 +24,7 @@ from backend.services.session import (
     StreamRegistry,
 )
 from common_lib.clock import Clock
+from common_lib.security import KeyStore
 
 
 def stream_policy(settings: BackendSettings) -> StreamPolicy:
@@ -42,6 +44,9 @@ def sync_factory(settings: BackendSettings, index: MerkleIndex, clock: Clock) ->
     policy = SyncPolicy(
         deadline_s=settings.merkle_sync_deadline_s,
         max_restarts=settings.merkle_sync_max_restarts,
+        settle_window_s=settings.index_settle_window_s,
+        max_request_attempts=settings.index_rerequest_max_attempts,
+        rerequest_limit=settings.index_rerequest_limit,
     )
     budget = NodeBudget(settings.merkle_sync_max_held_nodes)  # shared by every stream
 
@@ -49,6 +54,18 @@ def sync_factory(settings: BackendSettings, index: MerkleIndex, clock: Clock) ->
         return MerkleSyncs(index, repositories, policy=policy, budget=budget, clock=clock)
 
     return build
+
+
+def chunk_uploads(
+    settings: BackendSettings,
+    index: MerkleIndex,
+    keys: KeyStore,
+    publisher: ChunkPublisher,
+    clock: Clock,
+) -> ChunkUploads:
+    return ChunkUploads(
+        index, keys, publisher, settle_window_s=settings.index_settle_window_s, clock=clock
+    )
 
 
 def session_gate(

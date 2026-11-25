@@ -86,6 +86,12 @@ class BackendSettings(
     merkle_sync_max_restarts: int = Field(default=3, ge=0, le=10)
     # Nodes all syncs of one process may hold at once (a few hundred bytes each).
     merkle_sync_max_held_nodes: int = Field(default=1_000_000, ge=1000, le=5_000_000)
+    # Pending leaves (slice 8c3c): one neither asked for nor published for this long is
+    # asked for again, at most this many times, at most this many per sync. The window
+    # outlasts the indexer's retries (about 7 minutes) and a scan.
+    index_settle_window_s: int = Field(default=900, ge=60, le=86_400)
+    index_rerequest_max_attempts: int = Field(default=5, ge=1, le=50)
+    index_rerequest_limit: int = Field(default=1000, ge=1, le=10_000)
 
     @model_validator(mode="after")
     def _heartbeats_fit_the_idle_timeout(self) -> "BackendSettings":

@@ -8,7 +8,7 @@ from xype.v1 import common_pb2, session_pb2
 
 from backend.services.session import HelloRequest
 from common_lib.correlation import is_valid_correlation_id
-from common_lib.domain import uuid7
+from common_lib.domain import ChunkRef, uuid7
 from common_lib.merkle import MAX_CHUNKS_PER_UPLOAD
 
 # Messages naming a repository; checked against those authorized at Hello, with the
@@ -81,3 +81,13 @@ def token_refresh(
     stamp.FromDatetime(expires_at)
     notice = session_pb2.TokenRefreshRequired(expires_at=stamp)
     return response(now, correlation_id, session_pb2.SessionResponse(token_refresh_required=notice))
+
+
+def chunk_ref(ref: ChunkRef) -> common_pb2.ChunkRef:
+    return common_pb2.ChunkRef(
+        repository_id=str(ref.repository_id),
+        obfuscated_file_id=ref.obfuscated_file_id,
+        lines=common_pb2.LineRange(start=ref.line_start, end=ref.line_end),
+        chunk_hash=ref.chunk_hash,
+        leaf_node_id=ref.leaf_node_id,
+    )
