@@ -59,6 +59,8 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Scrubbing**: replacing secrets and personal data with `<SECRET_REMOVED>` on the client before encryption; the server repeats the check after decryption (ADR-0019).
 
+**Path exclusion**: the client's check before a file is read: a denied path (`denied_paths` in the shared rule file), a file over 1 MiB, a binary file or one that is not UTF-8 never produces a chunk (ADR-0019).
+
 **Scrub corpus**: the shared, synthetic test cases (`packages/scrub-rules/corpus.json`) that both scrubber implementations must reproduce exactly.
 
 **Pending leaf**: a Merkle leaf the server stored whose chunk has no result yet; the indexer's result settles it as `indexed` or `rejected` (ADR-0018, slice 8c2).

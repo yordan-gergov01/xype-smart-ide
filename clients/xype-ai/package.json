@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "description": "XYPE AI extension: context engine, session client and client-executed tools.",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "engines": {
     "node": ">=24"
   },
