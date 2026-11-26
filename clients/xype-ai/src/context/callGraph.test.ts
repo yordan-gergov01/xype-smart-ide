@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ScrubbedText } from '@/security/scrubber';
+
 import { buildCallGraph, type ChunkKey, type FileChunks, MAX_TARGETS } from './callGraph';
 import type { Chunk } from './chunkPlan';
 
@@ -8,7 +10,7 @@ function chunk(symbol: string, calls: string[] = [], kind = 'function', occurren
     kind,
     symbol,
     occurrence,
-    content: '',
+    content: '' as ScrubbedText,
     lines: [1, 1],
     name: symbol.slice(Math.max(symbol.indexOf(':'), symbol.lastIndexOf('.')) + 1),
     calls,

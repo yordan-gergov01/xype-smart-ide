@@ -49,9 +49,41 @@ export default tseslint.config(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [{ group: ['../*'], message: 'Import across folders through the @/ alias.' }] },
+        {
+          patterns: [
+            { group: ['../*'], message: 'Import across folders through the @/ alias.' },
+            { group: ['*.ts'], message: 'Only the scrub worker thread names .ts files.' },
+          ],
+        },
       ],
     },
+  },
+  {
+    // ADR-0019: only the scrubber makes `ScrubbedText`, and code is sealed only as it.
+    files: ['clients/xype-ai/src/**/*.ts'],
+    ignores: [
+      'clients/xype-ai/src/**/*.test.ts',
+      'clients/xype-ai/src/security/**',
+      'clients/xype-ai/src/context/chunkPlan.ts',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "TSAsExpression[typeAnnotation.typeName.name='ScrubbedText']",
+          message: 'Only the scrubber produces ScrubbedText (ADR-0019).',
+        },
+        {
+          selector: "CallExpression[callee.property.name='seal']",
+          message: 'Seal code with sealText, which takes only ScrubbedText (ADR-0019).',
+        },
+      ],
+    },
+  },
+  {
+    // Loaded by Node's type stripping, which needs the file extension.
+    files: ['clients/xype-ai/src/security/scrubThread.ts'],
+    rules: { 'no-restricted-imports': 'off' },
   },
   {
     files: ['**/*.test.{ts,tsx,mjs}'],

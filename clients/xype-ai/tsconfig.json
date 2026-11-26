@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "types": ["node"],
     "exactOptionalPropertyTypes": true,
+    "allowImportingTsExtensions": true,
     "allowJs": true,
     "checkJs": true,
     "paths": { "@/*": ["./src/*"] }

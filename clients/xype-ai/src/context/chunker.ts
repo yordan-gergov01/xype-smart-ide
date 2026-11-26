@@ -1,9 +1,12 @@
 // Chunking a scrubbed file (ADR-0017, slice 10): by its syntax tree for the seven
 // languages, by line windows for any other file, a language whose grammar did not load,
-// or a parse that returned no tree. tree-sitter recovers from syntax errors, so a tree
-// with errors is still chunked by AST. Pure and synchronous once the parsers are loaded.
+// or a parse that returned no tree or ran past its time budget. tree-sitter recovers
+// from syntax errors, so a tree with errors is still chunked by AST. Pure and
+// synchronous once the parsers are loaded.
 
 import type { Parser, Tree } from 'web-tree-sitter';
+
+import type { ScrubbedText } from '@/security/scrubber';
 
 import { type CallSite, type Chunk, planChunks, type Unit } from './chunkPlan';
 import { extractCalls, extractUnits, SPECS } from './extract';
@@ -37,21 +40,51 @@ export function languageOf(path: string): LanguageId | null {
 
 export type Parsers = ReadonlyMap<LanguageId, Parser>;
 
+export interface LoadedParsers {
+  readonly parsers: Parsers;
+  /** Languages whose grammar did not load: chunked by windows, and reported. */
+  readonly failed: readonly LanguageId[];
+}
+
 /** Loads every grammar it can; a language whose grammar fails is chunked by windows. */
-export async function loadParsers(grammarDir: string): Promise<Parsers> {
+export async function loadParsers(grammarDir: string): Promise<LoadedParsers> {
   const parsers = new Map<LanguageId, Parser>();
+  const failed: LanguageId[] = [];
   for (const id of LANGUAGE_IDS) {
     try {
       parsers.set(id, await createParser(grammarDir, id));
     } catch {
-      // The caller sees the gap through `parsers.has(id)`; chunking still works.
+      failed.push(id);
     }
   }
-  return parsers;
+  return { parsers, failed };
 }
 
-/** The chunks of one file; `text` is already scrubbed (ADR-0019) with LF line endings. */
-export function chunkFile(parsers: Parsers, path: string, text: string): Chunk[] {
+/** How long one file may parse before it is cut by line windows instead. */
+export const PARSE_BUDGET_MS = 2000;
+
+/** The tree, or null when the parse failed or ran past its budget. */
+function parseWithin(parser: Parser, text: string, budgetMs: number): Tree | null {
+  const deadline = performance.now() + budgetMs;
+  const state = { cancelled: false };
+  const tree = parser.parse(text, null, {
+    // Returning true cancels the parse (web-tree-sitter's documented contract).
+    progressCallback: () => (state.cancelled = performance.now() > deadline),
+  });
+  if (!state.cancelled) return tree;
+  // A cancelled parse would otherwise resume on the next call.
+  parser.reset();
+  tree?.delete();
+  return null;
+}
+
+/** The chunks of one file; `text` is scrubbed (ADR-0019) with LF line endings. */
+export function chunkFile(
+  parsers: Parsers,
+  path: string,
+  text: ScrubbedText,
+  parseBudgetMs = PARSE_BUDGET_MS,
+): Chunk[] {
   const language = languageOf(path);
   const parser = language === null ? undefined : parsers.get(language);
   if (language === null || parser === undefined) return planChunks('text', text, [], []);
@@ -60,7 +93,7 @@ export function chunkFile(parsers: Parsers, path: string, text: string): Chunk[]
   let units: Unit[] = [];
   let calls: CallSite[] = [];
   try {
-    tree = parser.parse(text);
+    tree = parseWithin(parser, text, parseBudgetMs);
     if (tree !== null) {
       units = extractUnits(language, tree.rootNode);
       calls = extractCalls(language, tree.rootNode);

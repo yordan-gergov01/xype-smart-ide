@@ -4,18 +4,21 @@ The XYPE AI extension: the client context engine (chunking, call graph, Merkle t
 
 ## Public interface (so far)
 
-The entry point is `src/index.ts` (`exports` in `package.json`). Everything there is pure and synchronous, with no `vscode` import, so the sync worker (slice 11) can run it off the extension host thread.
+The entry point is `src/index.ts` (`exports` in `package.json`). Nothing there imports `vscode`, so the sync can run off the extension host thread. Everything is pure and synchronous except the walker (file system) and the scrub worker (a worker thread).
 
 | Export | Module | What |
 |---|---|---|
 | `LANGUAGE_IDS`, `LanguageId` | `src/context/grammars.ts` | The languages chunked by AST |
 | `loadGrammar`, `createParser`, `grammarFile` | `src/context/grammars.ts` | Load a built grammar and get a parser for it |
 | `GrammarError` | `src/context/grammars.ts` | A grammar could not be loaded |
-| `loadParsers`, `chunkFile`, `languageOf`, `Chunk` | `src/context/chunker.ts` | Chunks of a scrubbed file: by syntax tree for the 7 languages, line windows otherwise (ADR-0017) |
+| `loadParsers`, `chunkFile`, `languageOf`, `Chunk`, `PARSE_BUDGET_MS` | `src/context/chunker.ts` | Chunks of a scrubbed file: by syntax tree for the 7 languages, line windows otherwise or past the parse budget; `loadParsers` reports grammars that failed (ADR-0017) |
 | `buildCallGraph`, `CallGraph`, `ChunkKey` | `src/context/callGraph.ts` | The chunks that call a chunk (its dependents), client-side |
-| `buildTree`, `innerHash`, `MerkleTree`, `MerkleError` | `src/context/merkle.ts` | The repository's Merkle tree with keyed ids (ADR-0018) |
+| `buildTree`, `innerHash`, `MerkleTree`, `MerkleError` | `src/context/merkle.ts` | The repository's Merkle tree with keyed ids, and each leaf's chunk (ADR-0018) |
 | `parsePathRules`, `isDeniedPath`, `fileText` | `src/security/paths.ts` | Path exclusion, size, binary and UTF-8 checks; CRLF becomes LF (ADR-0019) |
-| `parseRules`, `SecretScrubber`, `ScrubTimeoutError` | `src/security/scrubber.ts` | Whole-file scrubbing with the shared rules; fails closed past its budget |
+| `parseRules`, `SecretScrubber`, `ScrubTimeoutError`, `ScrubbedText` | `src/security/scrubber.ts` | Whole-file scrubbing with the shared rules; fails closed past its budget. `ScrubbedText` is the only text chunking and sealing accept |
+| `ScrubWorker`, `WorkerScrub` | `src/security/scrubWorker.ts` | Scrubbing in a worker thread, terminated past a hard limit (the file is then excluded) |
+| `walkRepository`, `WalkedFile` | `src/sync/walker.ts` | A repository's files after `.gitignore`, `.xype/ignore`, `denied_paths` and size checks; never follows links |
+| `MerkleResponder`, sync message types | `src/sync/responder.ts`, `messages.ts` | Answers `MerkleSyncRequest`s and seals the chunks a `MerkleDelta` asks for |
 | `hmacId`, `normalisePath` | `src/security/obfuscation.ts` | Obfuscated ids and the path form they hash (ADR-0016) |
 | `clientKeyPair`, `wrappingKey`, `unwrapSessionKey`, `unwrapRepositoryKey` | `src/security/keys.ts` | The X25519 session-key exchange (ADR-0015) |
 | `ClientCryptoBox` | `src/security/cryptoBox.ts` | Seals client-to-server and opens server-to-client payloads with its own counters |

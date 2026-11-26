@@ -6,6 +6,8 @@
 // most one chunk. These rules are part of the shared index: every client of a
 // repository must cut the same chunks (golden fixtures in `chunker.test.ts`).
 
+import type { ScrubbedText } from '@/security/scrubber';
+
 import type { ChunkInput } from './merkle';
 
 /** At most this many lines in one chunk before a unit is split. */
@@ -35,6 +37,7 @@ export interface CallSite {
 }
 
 export interface Chunk extends ChunkInput {
+  readonly content: ScrubbedText;
   /** The last segment of the symbol: what calls to this chunk name. */
   readonly name: string;
   /** Simple names this chunk calls, sorted and unique. */
@@ -165,7 +168,7 @@ class Planner {
  */
 export function planChunks(
   prefix: string,
-  text: string,
+  text: ScrubbedText,
   units: readonly Unit[],
   calls: readonly CallSite[],
 ): Chunk[] {
@@ -191,7 +194,8 @@ export function planChunks(
       kind: piece.kind,
       symbol: piece.symbol === '' ? '' : `${prefix}:${piece.symbol}`,
       occurrence,
-      content: lines.slice(piece.start, piece.end + 1).join(''),
+      // Whole lines of a scrubbed text are scrubbed.
+      content: lines.slice(piece.start, piece.end + 1).join('') as ScrubbedText,
       lines: [piece.start + 1, piece.end + 1],
       // What calls name; a dotted YAML key or heading gives only its tail, which is
       // harmless: calls are resolved for Python and scripts only.

@@ -6,6 +6,9 @@
 import { aesGcmOpen, aesGcmSeal, DecryptionError } from './aead';
 import { frame } from './framing';
 import { type Direction, directionKey } from './keys';
+import type { ScrubbedText } from './scrubber';
+
+const encoder = new TextEncoder();
 
 export const AAD_VERSION = '2';
 // Far below GCM's limit; the server refuses anything above it.
@@ -125,6 +128,16 @@ export class ClientCryptoBox {
       nonce,
       ciphertext: aesGcmSeal(this.#send, nonce, plaintext, payloadAad(full)),
     };
+  }
+
+  /** Seals scrubbed text (ADR-0019) and wipes its encoded copy; code goes only this way. */
+  sealText(text: ScrubbedText, context: SealContext): EncryptedPayload {
+    const plaintext = encoder.encode(text);
+    try {
+      return this.seal(plaintext, context);
+    } finally {
+      plaintext.fill(0);
+    }
   }
 
   /** Refuses a counter not above the last one opened, so a replay never opens twice. */

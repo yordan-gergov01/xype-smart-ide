@@ -18,9 +18,9 @@ export interface ChunkInput {
   readonly lines: readonly [number, number];
 }
 
-export interface FileInput {
+export interface FileInput<C extends ChunkInput = ChunkInput> {
   readonly path: string;
-  readonly chunks: readonly ChunkInput[];
+  readonly chunks: readonly C[];
 }
 
 export interface MerkleNode {
@@ -32,10 +32,17 @@ export interface MerkleNode {
   readonly lines: readonly [number, number] | null;
 }
 
-export interface MerkleTree {
+export interface MerkleLeaf<C extends ChunkInput = ChunkInput> {
+  readonly node: MerkleNode;
+  readonly chunk: C;
+}
+
+export interface MerkleTree<C extends ChunkInput = ChunkInput> {
   readonly rootHash: string;
   /** The children of `parentId` (`''` for the top level), sorted by node id. */
   children(parentId: string): readonly MerkleNode[];
+  /** A leaf and the chunk it was built from, for uploading what the server asks for. */
+  leaf(nodeId: string): MerkleLeaf<C> | undefined;
 }
 
 export class MerkleError extends Error {
@@ -73,8 +80,9 @@ function checkChunk(chunk: ChunkInput): void {
   }
 }
 
-class Builder {
+class Builder<C extends ChunkInput> {
   readonly byParent = new Map<string, MerkleNode[]>();
+  readonly leaves = new Map<string, MerkleLeaf<C>>();
   private readonly dirs = new Map<string, string>(); // directory path → node id
   private readonly dirIds = new Set<string>();
 
@@ -84,10 +92,14 @@ class Builder {
     this.repoKey = repoKey;
   }
 
-  addFile(file: FileInput): void {
+  addFile(file: FileInput<C>): void {
     const path = normalisePath(file.path);
     const fileId = hmacId(this.repoKey, 'file', path);
-    const leaves = file.chunks.map((chunk) => this.leaf(path, fileId, chunk));
+    const leaves = file.chunks.map((chunk) => {
+      const node = this.leaf(path, fileId, chunk);
+      this.leaves.set(node.nodeId, { node, chunk });
+      return node;
+    });
     for (const leaf of leaves) this.add(leaf);
     const hash = innerHash(leaves);
     this.add({ nodeId: fileId, parentId: this.parentOf(path), hash, isLeaf: false, lines: null });
@@ -139,11 +151,19 @@ class Builder {
 }
 
 /** Builds the tree of one repository; paths are repository-relative (ADR-0016). */
-export function buildTree(repoKey: Uint8Array, files: readonly FileInput[]): MerkleTree {
-  const builder = new Builder(repoKey);
+export function buildTree<C extends ChunkInput>(
+  repoKey: Uint8Array,
+  files: readonly FileInput<C>[],
+): MerkleTree<C> {
+  const builder = new Builder<C>(repoKey);
   for (const file of files) builder.addFile(file);
   const rootHash = builder.hashDirectory('');
   const byParent = builder.byParent;
   for (const siblings of byParent.values()) siblings.sort(byNodeId);
-  return { rootHash, children: (parentId) => byParent.get(parentId) ?? [] };
+  const leaves = builder.leaves;
+  return {
+    rootHash,
+    children: (parentId) => byParent.get(parentId) ?? [],
+    leaf: (nodeId) => leaves.get(nodeId),
+  };
 }

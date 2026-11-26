@@ -41,8 +41,16 @@ export interface ScrubRules {
   readonly allow: readonly RegExp[];
 }
 
+declare const scrubbed: unique symbol;
+
+/**
+ * Text the scrubber returned: the only text chunking and sealing accept. Produced only
+ * in `src/security` (here and in the scrub worker); any other cast defeats ADR-0019.
+ */
+export type ScrubbedText = string & { readonly [scrubbed]: true };
+
 export interface ScrubResult {
-  readonly text: string;
+  readonly text: ScrubbedText;
   readonly findings: ReadonlyMap<string, number>;
 }
 
@@ -121,6 +129,12 @@ export function shannonEntropy(token: string): number {
 const HEX = /^[0-9a-fA-F]+$/;
 const encoder = new TextEncoder();
 
+/** How long scrubbing `input` may take: the shared per-MiB budget, at least the minimum. */
+export function scrubBudgetMs(rules: ScrubRules, input: string): number {
+  const mib = encoder.encode(input).length / 2 ** 20;
+  return Math.max(rules.budgetMsPerMib * mib, rules.minBudgetMs);
+}
+
 export class SecretScrubber {
   private readonly rules: ScrubRules;
 
@@ -131,8 +145,7 @@ export class SecretScrubber {
   /** Throws `ScrubTimeoutError` when the text took longer than its budget. */
   scrub(input: string): ScrubResult {
     const started = performance.now();
-    const mib = encoder.encode(input).length / 2 ** 20;
-    const budget = Math.max(this.rules.budgetMsPerMib * mib, this.rules.minBudgetMs);
+    const budget = scrubBudgetMs(this.rules, input);
     const findings = new Map<string, number>();
     // Keywords are checked on the input: a replacement can remove one, never add one.
     const folded = input.toLowerCase();
@@ -147,7 +160,7 @@ export class SecretScrubber {
     if (performance.now() - started > budget) {
       throw new ScrubTimeoutError('scrubbing exceeded its time budget');
     }
-    return { text, findings };
+    return { text: text as ScrubbedText, findings };
   }
 
   private replace(
