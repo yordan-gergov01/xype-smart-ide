@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import type { Parser } from 'web-tree-sitter';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import type { ScrubbedText } from '@/security/scrubber';
+
 import { chunkFile, languageOf, loadParsers, type Parsers } from './chunker';
 import { splitLines } from './chunkPlan';
 import { grammarFile, LANGUAGE_IDS, type LanguageId } from './grammars';
@@ -77,12 +79,15 @@ const GOLDEN: Record<LanguageId, Row[]> = {
 describe.skipIf(skip)('chunkFile (run `npm run grammars -w xype-ai` first)', () => {
   let parsers: Parsers;
   beforeAll(async () => {
-    parsers = await loadParsers(GRAMMAR_DIR);
+    parsers = (await loadParsers(GRAMMAR_DIR)).parsers;
   });
+  // A generous parse budget: the goldens must never fall back to windows under load.
+  const cut = (path: string, text: string, budgetMs = HOSTILE_MS) =>
+    chunkFile(parsers, path, text as ScrubbedText, budgetMs);
 
   it.each(LANGUAGE_IDS)('cuts the golden chunks of the %s sample', (id) => {
     const { path, text } = SAMPLES[id];
-    const chunks = chunkFile(parsers, path, text);
+    const chunks = cut(path, text);
     expect(chunks.map((c) => [c.kind, c.symbol, c.occurrence, c.lines, c.calls])).toEqual(
       GOLDEN[id],
     );
@@ -95,10 +100,8 @@ describe.skipIf(skip)('chunkFile (run `npm run grammars -w xype-ai` first)', () 
 
   it('keeps a symbol chunk and its id when lines are inserted above it', () => {
     const { path, text } = SAMPLES.python;
-    const before = chunkFile(parsers, path, text).find((c) => c.symbol === 'py:Store');
-    const after = chunkFile(parsers, path, `# note\n# more\n${text}`).find(
-      (c) => c.symbol === 'py:Store',
-    );
+    const before = cut(path, text).find((c) => c.symbol === 'py:Store');
+    const after = cut(path, `# note\n# more\n${text}`).find((c) => c.symbol === 'py:Store');
     expect(after?.lines).toEqual([11, 15]);
     expect([after?.content, after?.occurrence]).toEqual([before?.content, before?.occurrence]);
   });
@@ -109,18 +112,18 @@ describe.skipIf(skip)('chunkFile (run `npm run grammars -w xype-ai` first)', () 
       (_, i) => `    def m${String(i)}(self):\n        return ${String(i)}\n`,
     );
     const text = `class Big:\n    size = 1\n\n${methods.join('\n')}`;
-    const chunks = chunkFile(parsers, 'big.py', text);
+    const chunks = cut('big.py', text);
     expect(chunks[0]).toMatchObject({ kind: 'class', symbol: 'py:Big', lines: [1, 2] });
     expect(chunks.filter((c) => c.symbol.startsWith('py:Big.m'))).toHaveLength(60);
     expect(chunks[1]).toMatchObject({ kind: 'function', symbol: 'py:Big.m0', lines: [4, 5] });
   });
 
   it('chunks a file with syntax errors by its tree, and other files by windows', () => {
-    expect(
-      chunkFile(parsers, 'a.py', 'def ok():\n    pass\n\ndef broken(:\n').map((c) => c.symbol),
-    ).toContain('py:ok');
+    expect(cut('a.py', 'def ok():\n    pass\n\ndef broken(:\n').map((c) => c.symbol)).toContain(
+      'py:ok',
+    );
     const text = Array.from({ length: 130 }, (_, i) => `line ${String(i)}\n`).join('');
-    const windows = chunkFile(parsers, 'notes.txt', text);
+    const windows = cut('notes.txt', text);
     expect(windows.map((c) => [c.kind, c.occurrence, c.lines])).toEqual([
       ['block', 0, [1, 60]],
       ['block', 1, [61, 120]],
@@ -132,7 +135,7 @@ describe.skipIf(skip)('chunkFile (run `npm run grammars -w xype-ai` first)', () 
     'survives a node with 300k children',
     () => {
       const text = `export const xs = [${'0,'.repeat(300_000)}0];\nfunction f() {}\n`;
-      expect(chunkFile(parsers, 'big.js', text).map((c) => c.symbol)).toEqual(['js:f']);
+      expect(cut('big.js', text).map((c) => c.symbol)).toEqual(['js:f']);
     },
     HOSTILE_MS,
   );
@@ -143,7 +146,7 @@ describe.skipIf(skip)('chunkFile (run `npm run grammars -w xype-ai` first)', () 
       const depth = 2_000;
       const open = Array.from({ length: depth }, (_, i) => `namespace n${String(i)} {\n`).join('');
       const text = `${open}const x = 1;\n${'}\n'.repeat(depth)}`;
-      const chunks = chunkFile(parsers, 'deep.ts', text);
+      const chunks = cut('deep.ts', text);
       expect(chunks.length).toBeGreaterThan(0);
       expect(Math.max(...chunks.map((c) => c.symbol.length))).toBeLessThanOrEqual(1000 + 3);
     },
@@ -158,21 +161,39 @@ describe.skipIf(skip)('chunkFile (run `npm run grammars -w xype-ai` first)', () 
       },
     } as unknown as Parser;
     failing.set('python', broken);
-    expect(chunkFile(failing, 'a.py', 'def f():\n    pass\n').map((c) => c.kind)).toEqual([
-      'block',
-    ]);
+    const text = 'def f():\n    pass\n' as ScrubbedText;
+    expect(chunkFile(failing, 'a.py', text).map((c) => c.kind)).toEqual(['block']);
   });
+
+  it(
+    'cuts a file by windows when its parse runs past the budget, and parses again after',
+    () => {
+      const text = `export const xs = [${'0,'.repeat(300_000)}0];\nfunction f() {}\n`;
+      expect(cut('big.js', text, 0).every((c) => c.kind === 'block')).toBe(true);
+      expect(cut('small.js', 'function g() {}\n').map((c) => c.symbol)).toEqual(['js:g']);
+    },
+    HOSTILE_MS,
+  );
 
   it(
     'never emits a chunk over the size cap, even for a one-line minified file',
     () => {
       const minified = `var a=${'1+'.repeat(512 * 1024)}1;\nexport const b = () => a;\n`;
-      const chunks = chunkFile(parsers, 'dist/app.min.js', minified);
+      const chunks = cut('dist/app.min.js', minified);
       expect(chunks.map((c) => c.symbol)).toEqual(['js:b']);
       expect(chunks.every((c) => Buffer.byteLength(c.content) <= 16 * 1024)).toBe(true);
     },
     HOSTILE_MS,
   );
+});
+
+describe('loadParsers', () => {
+  it('reports every grammar that did not load', async () => {
+    const { parsers, failed } = await loadParsers(
+      fileURLToPath(new URL('./none', import.meta.url)),
+    );
+    expect([parsers.size, failed]).toEqual([0, [...LANGUAGE_IDS]]);
+  });
 });
 
 describe('languageOf', () => {

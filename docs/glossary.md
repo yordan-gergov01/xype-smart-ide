@@ -67,6 +67,12 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Path exclusion**: the client's check before a file is read: a denied path (`denied_paths` in the shared rule file), a file over 1 MiB, a binary file or one that is not UTF-8 never produces a chunk (ADR-0019).
 
+**Scrubbed text**: text the client's scrubber returned (`ScrubbedText`); the only text the client chunks, hashes into the Merkle tree or seals (ADR-0019).
+
+**Workspace walker**: the client's walk over one repository's files, which reads a file only after the ignore files, `denied_paths` and its size allowed it, and never follows a link (ADR-0019).
+
+**Parse budget**: how long one file may parse (2 s) before the chunker cuts it by line windows instead (ADR-0017).
+
 **Scrub corpus**: the shared, synthetic test cases (`packages/scrub-rules/corpus.json`) that both scrubber implementations must reproduce exactly.
 
 **Pending leaf**: a Merkle leaf the server stored whose chunk has no result yet; the indexer's result settles it as `indexed` or `rejected` (ADR-0018, slice 8c2).

@@ -15,6 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "ignore": "7.0.14",
     "web-tree-sitter": "0.27.1"
   },
   "devDependencies": {
