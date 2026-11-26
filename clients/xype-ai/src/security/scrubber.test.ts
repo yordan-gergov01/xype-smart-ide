@@ -87,6 +87,9 @@ function* inputs(ruleId: string): Generator<string> {
   }
 }
 
+// The quadratic self-test takes seconds by design (about 6 s on a CI runner).
+const SLOW_TEST_MS = 60_000;
+
 describe('ReDoS check on V8', () => {
   const ids = [...RULES.rules.map((r) => r.id), RULES.entropy.id];
 
@@ -94,19 +97,23 @@ describe('ReDoS check on V8', () => {
     expect(Object.keys(adversarial.triggers).sort()).toEqual([...ids].sort());
   });
 
-  it('catches a rule that backtracks', () => {
-    // A bounded rule of the portable subset can still be quadratic: this one is.
-    const slowRule = { ...RULES.entropy, id: 'slow', pattern: /[a-z]{0,20000}x/dg, keywords: [] };
-    const slow = new SecretScrubber({
-      ...RULES,
-      budgetMsPerMib: 1e9,
-      rules: [slowRule],
-      entropy: { ...RULES.entropy, keywords: ['\u0000never'] },
-    });
-    const started = performance.now();
-    slow.scrub('a'.repeat(adversarial.size_bytes));
-    expect((performance.now() - started) / 1000).toBeGreaterThan(adversarial.max_seconds);
-  });
+  it(
+    'catches a rule that backtracks',
+    () => {
+      // A bounded rule of the portable subset can still be quadratic: this one is.
+      const slowRule = { ...RULES.entropy, id: 'slow', pattern: /[a-z]{0,20000}x/dg, keywords: [] };
+      const slow = new SecretScrubber({
+        ...RULES,
+        budgetMsPerMib: 1e9,
+        rules: [slowRule],
+        entropy: { ...RULES.entropy, keywords: ['\u0000never'] },
+      });
+      const started = performance.now();
+      slow.scrub('a'.repeat(adversarial.size_bytes));
+      expect((performance.now() - started) / 1000).toBeGreaterThan(adversarial.max_seconds);
+    },
+    SLOW_TEST_MS,
+  );
 
   it.each(ids)('%s stays linear', (ruleId) => {
     const scrubber = only(ruleId);
