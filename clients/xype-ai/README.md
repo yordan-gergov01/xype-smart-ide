@@ -11,6 +11,8 @@ The entry point is `src/index.ts` (`exports` in `package.json`). Everything ther
 | `LANGUAGE_IDS`, `LanguageId` | `src/context/grammars.ts` | The languages chunked by AST |
 | `loadGrammar`, `createParser`, `grammarFile` | `src/context/grammars.ts` | Load a built grammar and get a parser for it |
 | `GrammarError` | `src/context/grammars.ts` | A grammar could not be loaded |
+| `loadParsers`, `chunkFile`, `languageOf`, `Chunk` | `src/context/chunker.ts` | Chunks of a scrubbed file: by syntax tree for the 7 languages, line windows otherwise (ADR-0017) |
+| `buildCallGraph`, `CallGraph`, `ChunkKey` | `src/context/callGraph.ts` | The chunks that call a chunk (its dependents), client-side |
 | `buildTree`, `innerHash`, `MerkleTree`, `MerkleError` | `src/context/merkle.ts` | The repository's Merkle tree with keyed ids (ADR-0018) |
 | `parsePathRules`, `isDeniedPath`, `fileText` | `src/security/paths.ts` | Path exclusion, size, binary and UTF-8 checks; CRLF becomes LF (ADR-0019) |
 | `parseRules`, `SecretScrubber`, `ScrubTimeoutError` | `src/security/scrubber.ts` | Whole-file scrubbing with the shared rules; fails closed past its budget |

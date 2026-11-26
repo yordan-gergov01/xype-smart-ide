@@ -1,0 +1,118 @@
+// Small sample files per language for the chunker's golden fixtures (no real code).
+
+import type { LanguageId } from './grammars';
+
+export const SAMPLES: Record<LanguageId, { readonly path: string; readonly text: string }> = {
+  python: {
+    path: 'app/service.py',
+    text: [
+      'import os',
+      '',
+      '',
+      '@cached',
+      'def load(name):',
+      '    return read(os.path.join("data", name))',
+      '',
+      '',
+      'class Store(Base):',
+      '    limit = 3',
+      '',
+      '    def get(self, key):',
+      '        return load(key)',
+      '',
+      '',
+      'def read(path): return open(path).read()',
+      '',
+      'main()',
+      '',
+    ].join('\n'),
+  },
+  typescript: {
+    path: 'src/api.ts',
+    text: [
+      "import { a } from './a';",
+      '',
+      'export function fetchUser(id: string): User {',
+      '  return parse(get(id));',
+      '}',
+      '',
+      'export const parse = (raw: string): User => new User(raw);',
+      '',
+      'export class User {',
+      '  constructor(readonly raw: string) {}',
+      '  name(): string {',
+      '    return this.raw;',
+      '  }',
+      '}',
+      '',
+      'interface Options {',
+      '  retries: number;',
+      '}',
+      '',
+      'type Id = string;',
+      'export default function () {}',
+      '',
+    ].join('\n'),
+  },
+  tsx: {
+    path: 'src/View.tsx',
+    text: [
+      'export function View() {',
+      '  return <Button onClick={() => save()} />;',
+      '}',
+      '',
+      'const Button = (props: Props) => <button {...props} />;',
+      '',
+    ].join('\n'),
+  },
+  javascript: {
+    path: 'lib/index.mjs',
+    text: [
+      'function helper() {',
+      '  return 1;',
+      '}',
+      '',
+      'export const run = function () {',
+      '  return helper();',
+      '};',
+      '',
+      'run();',
+      '',
+    ].join('\n'),
+  },
+  yaml: {
+    path: 'deploy/app.yml',
+    text: ['name: app', 'services:', '  web:', '    image: web', '---', 'name: other', ''].join(
+      '\n',
+    ),
+  },
+  sql: {
+    path: 'db/schema.sql',
+    text: [
+      'CREATE TABLE users (id int);',
+      '',
+      'CREATE FUNCTION total() RETURNS int AS $$ SELECT 1 $$ LANGUAGE sql;',
+      '',
+      'SELECT id FROM users;',
+      'SELECT 2;',
+      '',
+    ].join('\n'),
+  },
+  markdown: {
+    path: 'docs/guide.md',
+    text: ['Intro line.', '', '# Guide', '', 'Text.', '', '## Install', '', 'Steps.', ''].join(
+      '\n',
+    ),
+  },
+  dockerfile: {
+    path: 'Dockerfile',
+    text: [
+      'FROM python:3.12 AS build',
+      'RUN pip install x',
+      '',
+      'FROM build',
+      'COPY . /app',
+      '',
+    ].join('\n'),
+  },
+};
