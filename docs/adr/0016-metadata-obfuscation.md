@@ -61,6 +61,12 @@ Chosen option: **1**.
 - **Exchange.** `/session-key` takes up to 64 `repository_ids`. One query on the primary returns the active keys of those that belong to the caller's team, so another team's id and an unknown one are left out the same way, and replica lag right after registration cannot look like "not yours". The keys are read before the session key is stored, so a failed read leaves no orphan key. Each is unwrapped, sealed for the client with AAD `frame("repo-hmac", repository_id, hmac_key_id)` (`seal_repository_key`, a shared vector) and wiped. A row that fails authentication fails the whole exchange.
 - **Not built yet.** Re-wrapping repository keys after a KEK rotation, and rotating a repository key. Until the re-wrap exists, `KEK_PREVIOUS` stays set after a KEK rotation (`docs/runbooks/key-rotation.md`).
 
+### Implementation notes (slice 9, client)
+
+- `clients/xype-ai/src/security/obfuscation.ts` (`hmacId`, `normalisePath`) passes the shared `frame` and `hmac_id` vectors.
+- `normalisePath` turns `\` into `/`, applies NFC and drops leading `./`. It refuses absolute paths, drive letters (`:`), `..` and empty segments, so Windows, macOS (NFD file names) and Linux clients give one file one id (test: a reordered tree with `\` separators and an NFD name has the same root).
+- A chunk's `occurrence` is framed as its decimal digits, from 0.
+
 ## Pros and cons of the options
 
 ### 2. Plain SHA-256
