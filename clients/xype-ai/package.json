@@ -11,14 +11,19 @@
     "node": ">=24"
   },
   "scripts": {
+    "gen": "buf generate",
     "grammars": "node scripts/build-grammars.mjs",
     "test": "vitest run"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "2.17.0",
+    "@connectrpc/connect": "2.3.0",
+    "@connectrpc/connect-node": "2.3.0",
     "ignore": "7.0.14",
     "web-tree-sitter": "0.27.1"
   },
   "devDependencies": {
+    "@bufbuild/protoc-gen-es": "2.17.0",
     "@types/node": "24.19.2",
     "tree-sitter-cli": "0.27.1",
     "vitest": "5.1.0"

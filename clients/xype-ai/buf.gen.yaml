@@ -1,0 +1,14 @@
+# TypeScript messages and the service descriptor for the gRPC contract (ADR-0038).
+# Output goes to src/gen/, which git ignores: `npm run gen -w xype-ai` regenerates it.
+version: v2
+inputs:
+  - directory: ../../proto
+plugins:
+  # The npm-installed plugin, run through node so it works the same on Windows and Linux.
+  - local: ["node", "../../node_modules/@bufbuild/protoc-gen-es/bin/protoc-gen-es"]
+    out: src/gen
+    opt:
+      # js+dts: generated enums are not erasable syntax (tsconfig `erasableSyntaxOnly`).
+      - target=js+dts
+      - import_extension=none
+clean: true

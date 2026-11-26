@@ -85,6 +85,10 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Session stream**: the persistent bidirectional gRPC connection between one IDE window and the server. It lives at most as long as its access token and closes with a `StreamError` (ADR-0013).
 
+**Session client**: the extension's side of the session stream: one stream at a time, each with its own session key, reconnecting with backoff (ADR-0013, ADR-0038).
+
+**Token source**: the extension's holder of one window's access and refresh tokens; a refresh token is used at most once, and a failed refresh logs in again (ADR-0014).
+
 **Session gate**: the session service's checks on a stream: the token when it opens, the session key and repositories at Hello, and the rate limit and repositories on every later message (ADR-0013).
 
 **Hello**: the first message on a session stream; it names the session key and the repositories the window works on.

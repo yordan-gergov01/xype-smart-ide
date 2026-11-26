@@ -20,6 +20,7 @@ export default tseslint.config(
       'server',
       'fork/vscode',
       'clients/xype-ai/grammars',
+      'clients/xype-ai/src/gen',
       'clients/xype-ai/.grammar-work',
     ],
   },
@@ -46,6 +47,22 @@ export default tseslint.config(
     // Module boundaries (rule 03, ADR-0008): code outside a folder is imported through
     // the `@/` alias, never by climbing out with `../`.
     files: ['clients/*/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            { group: ['../*'], message: 'Import across folders through the @/ alias.' },
+            { group: ['*.ts'], message: 'Only the scrub worker thread names .ts files.' },
+            { group: ['**/testing/*'], message: 'Fakes are for tests only (rule 03).' },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Tests and the fakes themselves may use the fakes.
+    files: ['clients/*/src/**/*.test.{ts,tsx}', 'clients/*/src/**/testing/**'],
     rules: {
       'no-restricted-imports': [
         'error',
