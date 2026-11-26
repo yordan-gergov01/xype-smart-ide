@@ -83,6 +83,29 @@ The compiled parsers include each grammar's hand-written `src/scanner.c`. They r
 
 `src/context/grammars.ts` initialises `web-tree-sitter` once and loads a grammar by language id. A load failure raises `GrammarError`. Chunking (slice 10) keeps a line-window fallback for files that fail to parse.
 
+### Implementation notes (slice 10, chunking and call graph)
+
+These rules are part of the shared index: two client versions that cut differently re-sync over each other (ADR-0018). Golden fixtures in `src/context/chunker.test.ts` pin them, so any change shows up in review.
+
+- **Input.** The scrubbed file (ADR-0019) with LF line endings. The parser never sees unscrubbed text.
+- **Content.** A chunk is a range of whole lines. Its content is exactly those lines with their terminators, so it depends only on the text and the range, and a later fetch by line range returns the same bytes. Each line belongs to at most one chunk: a unit that starts on a line the previous one owns starts on the next line, and a unit wholly inside it is dropped. Blank lines at a chunk's edges and blank-only gaps produce nothing.
+- **Units per language** (`src/context/extract.ts`):
+
+  | Language | Units (kind) | Symbol prefix |
+  |---|---|---|
+  | Python | `function`, `class` (decorators included; methods nest in classes) | `py` |
+  | TypeScript, TSX, JavaScript | `function` (declarations and `const f = () =>`), `class`, `method`, `interface`, `type`, `enum`, `namespace`; `export` wraps the unit, an unnamed default export is `default` | `ts`, `tsx`, `js` |
+  | SQL | `table`, `view`, `function`, `index`, `type` by the created object's name; any other statement is an unnamed `statement` | `sql` |
+  | YAML | top-level `key`, nested keys as children | `yaml` |
+  | Markdown | `section` by heading text, subsections as children; text before the first heading is an unnamed section | `md` |
+  | Dockerfile | `stage`: a `FROM` up to the next one, named by its `AS` alias | `docker` |
+
+- **Lines between units** become `block` chunks. Any other file, a grammar that did not load or a parse with no tree is cut into `block` line windows, with symbol prefix `text`. A tree with syntax errors is still chunked by AST, because tree-sitter recovers from errors.
+- **Sizes.** A unit of up to 150 lines and 16 KiB of UTF-8 is one chunk. A larger unit is split into its children (methods, subsections, nested keys), and its remaining lines keep the unit's kind and symbol. A large unit without children is cut into 60-line windows. Every chunk stays within 16 KiB, well below the indexer's 64 KiB cap. A single line over 16 KiB (minified or generated code) is left out of every chunk.
+- **Symbols.** `prefix:Outer.inner` (ADR-0016). A name is taken from the tree with its whitespace collapsed and capped at 200 characters. An unnamed chunk has the empty symbol, and its `occurrence` is its ordinal among the chunks of its kind (ADR-0018).
+- **Traversal.** Trees are walked with explicit stacks, never recursion over the tree, and deleted after use (WebAssembly memory). Children are pushed one by one, since spreading 200 000 children into one call throws. Definitions nest at most 32 levels (deeper ones are windows of the unit that holds them), and a whole symbol is capped at 1 000 characters. A parser that throws gives line windows, as a parse with no tree does.
+- **Call graph** (`src/context/callGraph.ts`). Calls (`call` in Python; `call_expression`, `new` and capitalised JSX elements in TypeScript, TSX and JavaScript) are resolved by simple name within a language family. A name defined in the caller's own file resolves only there. Otherwise it resolves to every definition of the name in the family, unless there are more than 8 of them. `dependents(chunk, depth)` returns the callers, nearest first. It lives on the client. Whether its edges go to the server's `chunk_edges` (keyed `symbol` ids) is decided when completion and chat use dependents.
+
 ### Consequences
 
 - Good: all seven languages are AST-based; one loader and one build path cover them.

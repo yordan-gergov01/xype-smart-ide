@@ -8,6 +8,11 @@ export {
   loadGrammar,
 } from './context/grammars';
 export type { LanguageId } from './context/grammars';
+export { buildCallGraph } from './context/callGraph';
+export type { CallGraph, ChunkKey, FileChunks } from './context/callGraph';
+export { chunkFile, languageOf, loadParsers } from './context/chunker';
+export type { Parsers } from './context/chunker';
+export type { Chunk } from './context/chunkPlan';
 export { buildTree, innerHash, MerkleError } from './context/merkle';
 export type { ChunkInput, FileInput, MerkleNode, MerkleTree } from './context/merkle';
 export { DecryptionError } from './security/aead';
