@@ -43,6 +43,12 @@ Written in Phase 2:
 | [0019](0019-secret-scrubbing.md) | Secret and PII scrubbing: path exclusion, then whole-file regex and entropy rules from one shared file, re-checked on the server | Proposed | §3.4.2, §3.7 |
 | [0020](0020-vector-store-pgvector.md) | Vector store: pgvector HNSW (cosine) behind `VectorStore`, iterative scans for repository filters | Proposed | §3.2, §3.4.6, §3.4.7 |
 
+Written in Phase 2, ahead of Phases 4–7 (the owner's idea):
+
+| # | Title | Status | Brief |
+|---|---|---|---|
+| [0039](0039-architecture-advisor.md) | Architecture advisor: own decision knowledge base, opt-in web research tool | Proposed (deviation) | §3.4, §4, §5 |
+
 Written in Phase 9 planning (ahead of the phase, as the owner asked):
 
 | # | Title | Status | Brief |

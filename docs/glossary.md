@@ -144,6 +144,12 @@ _Avoid_: master key
 
 **Client tool**: an action an agent task asks the client to perform (read, search, propose edit, run tests/commands), subject to approval rules.
 
+**Architecture advisor**: the chat and agent skill that turns an architectural question into options, trade-offs and one recommendation the user can record as an ADR (ADR-0039).
+
+**Decision knowledge base**: the project's own entries on engineering decisions (situation, options, trade-offs, when each fits), each with its licence; never copied text (ADR-0039).
+
+**Web research tool**: an opt-in, client-executed agent tool that sends an approved, abstract query to allow-listed sites and returns tool-less summaries with links, used only for the session (ADR-0039).
+
 **Backup model**: a faster, cheaper model used when the primary is slow, failing or over budget; its answers are labelled as such.
 
 **Weight-space programming**: improving a model by having another model read and edit its weights directly, without gradients; the only fine-tuning method of Phase 9 (ADR-0037).
