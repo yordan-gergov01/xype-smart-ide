@@ -43,3 +43,15 @@ export {
 } from './sync/responder';
 export { walkRepository } from './sync/walker';
 export type { WalkedFile } from './sync/walker';
+export { ApiError, AuthApi } from './session/api';
+export type { KeyApi, Principal, ServerEndpoint, TokenApi, Tokens } from './session/api';
+export { systemClock } from './session/clock';
+export type { Clock } from './session/clock';
+export { mintSessionKey } from './session/mint';
+export type { SessionKeys } from './session/mint';
+export { KEY_UNUSABLE, SessionClient } from './session/session';
+export type { SessionOptions, StopReason } from './session/session';
+export { TokenSource } from './session/tokens';
+export type { ClientCredentials, CredentialSource } from './session/tokens';
+export { grpcTransport, sessionTransport } from './session/transport';
+export type { SessionStream, SessionTransport } from './session/transport';

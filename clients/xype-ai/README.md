@@ -19,6 +19,10 @@ The entry point is `src/index.ts` (`exports` in `package.json`). Nothing there i
 | `ScrubWorker`, `WorkerScrub` | `src/security/scrubWorker.ts` | Scrubbing in a worker thread, terminated past a hard limit (the file is then excluded) |
 | `walkRepository`, `WalkedFile` | `src/sync/walker.ts` | A repository's files after `.gitignore`, `.xype/ignore`, `denied_paths` and size checks; never follows links |
 | `MerkleResponder`, sync message types | `src/sync/responder.ts`, `messages.ts` | Answers `MerkleSyncRequest`s and seals the chunks a `MerkleDelta` asks for |
+| `AuthApi`, `TokenSource` | `src/session/api.ts`, `tokens.ts` | Login, refresh, `/me` and session keys over REST with the server's CA; a refresh token is used once, a failed refresh logs in again |
+| `mintSessionKey` | `src/session/mint.ts` | A session key per stream in a new `ClientCryptoBox`, and the repositories' HMAC keys |
+| `SessionClient` | `src/session/session.ts` | The `Session` stream: Hello, heartbeats, the Merkle sync, token renewal, one key re-mint, backoff |
+| `grpcTransport`, `sessionTransport` | `src/session/transport.ts` | gRPC over HTTP/2 (Connect-ES, ADR-0038) behind the `SessionTransport` seam |
 | `hmacId`, `normalisePath` | `src/security/obfuscation.ts` | Obfuscated ids and the path form they hash (ADR-0016) |
 | `clientKeyPair`, `wrappingKey`, `unwrapSessionKey`, `unwrapRepositoryKey` | `src/security/keys.ts` | The X25519 session-key exchange (ADR-0015) |
 | `ClientCryptoBox` | `src/security/cryptoBox.ts` | Seals client-to-server and opens server-to-client payloads with its own counters |
@@ -34,6 +38,14 @@ npm run grammars -w xype-ai
 ```
 
 The first run lets tree-sitter-cli download its toolchain (wasi-sdk and binaryen, ≈ 700 MB) into the user cache. Later runs skip grammars that are up to date. Without built grammars, the grammar tests skip locally; CI builds them and requires them.
+
+## Generated code (ADR-0038)
+
+`src/gen/` holds the TypeScript generated from `proto/` and is not committed. `npm run check` and the pre-commit hook regenerate it; on its own:
+
+```bash
+npm run gen
+```
 
 ## Commands
 

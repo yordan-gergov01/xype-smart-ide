@@ -17,7 +17,8 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p clients/xype-ai",
     "test": "node --test .claude/hooks/hooks.test.mjs && npm test --workspaces --if-present",
     "dup": "jscpd",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run dup && npm run proto",
+    "gen": "npm run --silent gen -w xype-ai",
+    "check": "npm run gen && npm run format:check && npm run lint && npm run typecheck && npm test && npm run dup && npm run proto",
     "proto": "buf lint proto && buf format -d --exit-code proto"
   },
   "devDependencies": {
