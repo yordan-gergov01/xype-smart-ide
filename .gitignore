@@ -56,8 +56,12 @@ finetune/models/
 finetune/data/
 
 # Editors / OS
+# VS Code instances that @vscode/test-electron starts (npm run smoke)
+.vscode-test/
 .vscode/*
 !.vscode/extensions.json
+# The xype-ai Extension Development Host (F5), shared
+!.vscode/launch.json
 .idea/
 .DS_Store
 Thumbs.db

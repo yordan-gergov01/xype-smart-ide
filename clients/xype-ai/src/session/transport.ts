@@ -27,14 +27,29 @@ export interface SessionTransport {
   open(accessToken: string): SessionStream;
 }
 
+/**
+ * At most this many requests wait to be sent (an upload is up to about 1 MiB). Past it the
+ * stream closes and the session backs off: the server asks again for what it missed.
+ */
+export const MAX_QUEUED_REQUESTS = 64;
+
 /** Requests as an async iterable the call reads from; `end` finishes it. */
 class RequestQueue implements AsyncIterable<SessionRequest> {
   readonly #items: SessionRequest[] = [];
+  readonly #overflow: () => void;
   #wake: (() => void) | null = null;
   #ended = false;
 
+  constructor(overflow: () => void) {
+    this.#overflow = overflow;
+  }
+
   push(request: SessionRequest): void {
     if (this.#ended) return;
+    if (this.#items.length >= MAX_QUEUED_REQUESTS) {
+      this.#overflow();
+      return;
+    }
     this.#items.push(request);
     this.#wake?.();
   }
@@ -62,8 +77,11 @@ export function sessionTransport(transport: Transport): SessionTransport {
   const client = createClient(SessionService, transport);
   return {
     open(accessToken) {
-      const requests = new RequestQueue();
       const abort = new AbortController();
+      const requests = new RequestQueue(() => {
+        requests.end();
+        abort.abort();
+      });
       const responses = client.session(requests, {
         headers: { authorization: `Bearer ${accessToken}`, 'x-correlation-id': uuid7() },
         signal: abort.signal,

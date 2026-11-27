@@ -3,16 +3,22 @@
   "private": true,
   "version": "0.0.0",
   "description": "XYPE AI extension: context engine, session client and client-executed tools.",
+  "displayName": "XYPE AI",
+  "publisher": "xype",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
+  "main": "./dist/extension.cjs",
   "engines": {
-    "node": ">=24"
+    "node": ">=24",
+    "vscode": "^1.110.0"
   },
   "scripts": {
+    "build": "node scripts/build-extension.mjs",
     "gen": "buf generate",
     "grammars": "node scripts/build-grammars.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "test": "vitest run"
   },
   "dependencies": {
@@ -25,7 +31,55 @@
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "2.17.0",
     "@types/node": "24.19.2",
+    "@types/vscode": "1.110.0",
+    "@vscode/test-electron": "3.1.0",
+    "esbuild": "0.28.2",
     "tree-sitter-cli": "0.27.1",
     "vitest": "5.1.0"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "XYPE sends code (scrubbed and encrypted) to a server; it runs only in trusted workspaces."
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "xype.signIn",
+        "title": "XYPE: Sign in"
+      },
+      {
+        "command": "xype.signOut",
+        "title": "XYPE: Sign out"
+      }
+    ],
+    "configuration": {
+      "title": "XYPE",
+      "properties": {
+        "xype.serverUrl": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "The XYPE server, `https://host:port` (the edge proxy). User settings only: a workspace cannot set it."
+        },
+        "xype.caFile": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "PEM file of the CA that issued the server certificate (the local dev CA). Empty: the system CAs. User settings only: a workspace cannot set it."
+        },
+        "xype.repositoryId": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "The registered repository id of this workspace folder; folders without one are not indexed. Each folder binding is confirmed once."
+        }
+      }
+    }
   }
 }

@@ -1,6 +1,9 @@
-// The session's time seam, so tests run reconnects and heartbeats without waiting.
+// The time seam of the session and the sync engine, so tests run reconnects, heartbeats,
+// debounces and the CPU cap without waiting.
 
 export interface Clock {
+  /** Milliseconds on a monotonic clock. */
+  now(): number;
   /** Resolves after `ms`, or early when `signal` aborts. */
   sleep(ms: number, signal: AbortSignal): Promise<void>;
   /** Calls `tick` every `ms` until the returned function is called. */
@@ -10,6 +13,7 @@ export interface Clock {
 }
 
 export const systemClock: Clock = {
+  now: () => performance.now(),
   sleep: (ms, signal) =>
     new Promise((resolve) => {
       const timer = setTimeout(done, ms);

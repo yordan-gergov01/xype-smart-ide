@@ -28,11 +28,9 @@ type Reply =
   | { kind: 'scrubbed'; text: string; findings: Map<string, number> };
 
 const EXCLUDED: WorkerScrub = { kind: 'excluded', reason: 'scrub_timeout' };
-const THREAD = new URL('./scrubThread.ts', import.meta.url);
-
 /** Waits for the thread's first message, so start-up never counts against a file's limit. */
-function started(rulesData: unknown): Promise<Worker> {
-  const worker = new Worker(THREAD, { workerData: rulesData });
+function started(thread: URL, rulesData: unknown): Promise<Worker> {
+  const worker = new Worker(thread, { workerData: rulesData });
   return new Promise((resolve, reject) => {
     const fail = () => {
       void worker.terminate();
@@ -52,13 +50,20 @@ function started(rulesData: unknown): Promise<Worker> {
 export class ScrubWorker {
   readonly #rulesData: unknown;
   readonly #rules: ScrubRules;
+  readonly #thread: URL;
   #worker: Promise<Worker> | null = null;
   #queue: Promise<unknown> = Promise.resolve();
 
-  /** `rulesData` is the parsed `rules.json`; it is checked here before any thread starts. */
-  constructor(rulesData: unknown) {
+  /**
+   * `rulesData` is the parsed `rules.json`; it is checked here before any thread starts.
+   * `thread` is the thread's module: the built `scrubThread.cjs` in the extension, the
+   * TypeScript source (loaded by Node's type stripping) in tests.
+   */
+  constructor(rulesData: unknown, thread?: URL) {
     this.#rules = parseRules(rulesData);
     this.#rulesData = rulesData;
+    // Resolved only when not given: a CommonJS bundle has no `import.meta.url`.
+    this.#thread = thread ?? new URL('./scrubThread.ts', import.meta.url);
   }
 
   /** The scrubbed text, or `excluded` when it ran past the scrubber's budget or the hard limit. */
@@ -75,7 +80,7 @@ export class ScrubWorker {
   }
 
   async #run(text: string): Promise<WorkerScrub> {
-    this.#worker ??= started(this.#rulesData);
+    this.#worker ??= started(this.#thread, this.#rulesData);
     const worker = await this.#worker.catch((error: unknown) => {
       this.#worker = null;
       throw error;

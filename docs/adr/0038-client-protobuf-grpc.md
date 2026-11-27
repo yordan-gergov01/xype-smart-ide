@@ -33,6 +33,11 @@ Chosen option: **1**.
 - **Mapping.** Only `src/session/wire.ts` maps between the sync's plain messages (`src/sync/messages.ts`) and the generated types.
 - **REST.** The four auth calls use `node:https` with the same CA, so no HTTP client library is added.
 
+### Implementation notes (slice 11c, bundling)
+
+- esbuild bundles the extension host entry, the sync worker and the scrub thread into `clients/xype-ai/dist/` as CommonJS, with `vscode` external. VS Code loads the extension with `require`, and a CommonJS bundle has no `import.meta.url`. So web-tree-sitter is bundled from its CommonJS build, and every module path a worker loads (the scrub thread, the tree-sitter runtime, the grammars, the rules) is passed in from `dist/`.
+- `npm run build` runs in `npm run check`. `npm run smoke` runs the built extension in an installed VS Code (`XYPE_VSCODE_EXECUTABLE`, or `code` on the PATH on Windows) through `@vscode/test-electron`, with no download. It is not in CI: that needs a VS Code download and a virtual display.
+
 ### Consequences
 
 - Good: typed messages and a typed client from one generator, the same `buf` CLI as `npm run proto`.

@@ -145,10 +145,16 @@ export function scriptedServer(script: Script): ScriptedService & { transport: S
 /** Sleeps return at once and are recorded; intervals tick only when the test says so. */
 export class FakeClock implements Clock {
   readonly sleeps: number[] = [];
+  time = 0;
+
+  now(): number {
+    return this.time;
+  }
   readonly intervals: { ms: number; tick: () => void; active: boolean }[] = [];
 
   sleep(ms: number): Promise<void> {
     this.sleeps.push(ms);
+    this.time += ms;
     return Promise.resolve();
   }
 
@@ -162,5 +168,55 @@ export class FakeClock implements Clock {
 
   random(): number {
     return 0.5;
+  }
+}
+
+/** Sleeps wait until the test advances the time past them, or their signal aborts. */
+export class ManualClock implements Clock {
+  time = 0;
+  readonly #sleepers: { until: number; wake: () => void }[] = [];
+  readonly #intervals: { next: number; ms: number; tick: () => void; active: boolean }[] = [];
+
+  now(): number {
+    return this.time;
+  }
+
+  sleep(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      const sleeper = { until: this.time + ms, wake: resolve };
+      this.#sleepers.push(sleeper);
+      signal.addEventListener('abort', () => {
+        resolve();
+      });
+    });
+  }
+
+  every(ms: number, tick: () => void): () => void {
+    const interval = { next: this.time + ms, ms, tick, active: true };
+    this.#intervals.push(interval);
+    return () => {
+      interval.active = false;
+    };
+  }
+
+  random(): number {
+    return 0.5;
+  }
+
+  /** Moves the time on, waking sleepers and firing intervals that fall due. */
+  async advance(ms: number): Promise<void> {
+    this.time += ms;
+    for (const interval of this.#intervals) {
+      while (interval.active && interval.next <= this.time) {
+        interval.next += interval.ms;
+        interval.tick();
+      }
+    }
+    for (const sleeper of this.#sleepers.filter((s) => s.until <= this.time)) {
+      this.#sleepers.splice(this.#sleepers.indexOf(sleeper), 1);
+      sleeper.wake();
+    }
+    // Let woken work run before the test looks.
+    for (let i = 0; i < 20; i++) await Promise.resolve();
   }
 }

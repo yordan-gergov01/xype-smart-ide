@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "xype-ai: Extension Development Host",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/clients/xype-ai"],
+      "outFiles": ["${workspaceFolder}/clients/xype-ai/dist/**/*.cjs"]
+    }
+  ]
+}

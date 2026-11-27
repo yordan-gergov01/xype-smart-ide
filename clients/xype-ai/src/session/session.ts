@@ -18,7 +18,7 @@ import type { MerkleResponder } from '@/sync/responder';
 import { ApiError, type KeyApi } from './api';
 import type { Clock } from './clock';
 import { mintSessionKey, type SessionKeys } from './mint';
-import type { TokenSource } from './tokens';
+import { CredentialsMissingError, type TokenSource } from './tokens';
 import type { SessionStream, SessionTransport } from './transport';
 import {
   chunkUploadRequest,
@@ -37,11 +37,13 @@ export const BACKOFF_BASE_MS = 1000;
 export const BACKOFF_MAX_MS = 60_000;
 
 /**
- * Why the session ended. All but `stopped` need the user: more windows than the key cap,
+ * Why the session ended. All but `stopped` need the user: no stored credentials, more
+ * windows than the key cap,
  * client credentials the server refuses, or a Hello it refuses (a repository the team no
  * longer has, or too many).
  */
-export type StopReason = 'stopped' | 'too_many_windows' | 'credentials_rejected' | 'hello_refused';
+export type StopReason =
+  'stopped' | 'signed_out' | 'too_many_windows' | 'credentials_rejected' | 'hello_refused';
 
 export interface SessionOptions {
   readonly api: KeyApi;
@@ -59,10 +61,18 @@ type Outcome =
   | { readonly kind: 'refresh' }
   | { readonly kind: 'key_unusable' }
   | { readonly kind: 'hello_refused' }
+  | { readonly kind: 'signed_out' }
   | { readonly kind: 'backoff'; readonly retryAfterMs: number }
   | { readonly kind: 'stopped' };
 
 const BACKOFF: Outcome = { kind: 'backoff', retryAfterMs: 0 };
+
+/** Outcomes that end the session at once. */
+const STOPS: Partial<Record<Outcome['kind'], StopReason>> = {
+  stopped: 'stopped',
+  hello_refused: 'hello_refused',
+  signed_out: 'signed_out',
+};
 
 /** What a `StreamError` means for this stream; null keeps it open. */
 function errorOutcome(error: StreamError): Outcome | null {
@@ -82,6 +92,7 @@ function errorOutcome(error: StreamError): Outcome | null {
 
 /** A failed call or REST request: an expired token is renewed, anything else backs off. */
 function failureOutcome(error: unknown): Outcome {
+  if (error instanceof CredentialsMissingError) return { kind: 'signed_out' };
   const unauthenticated =
     (error instanceof ConnectError && error.code === Code.Unauthenticated) ||
     (error instanceof ApiError && error.status === 401);
@@ -146,11 +157,9 @@ export class SessionClient {
       const outcome = await this.#connect();
       const repeated = previous === outcome.kind;
       previous = outcome.kind;
+      const stop = STOPS[outcome.kind];
+      if (stop !== undefined) return stop;
       switch (outcome.kind) {
-        case 'stopped':
-          return 'stopped';
-        case 'hello_refused':
-          return 'hello_refused';
         case 'key_unusable':
           if (repeated) return 'too_many_windows';
           if (immediate++ > 0) await this.#backoff(0);
@@ -161,9 +170,12 @@ export class SessionClient {
           if (renewed !== null) return renewed;
           break;
         }
-        default:
+        case 'backoff':
           immediate = 0;
           await this.#backoff(outcome.retryAfterMs);
+          break;
+        default:
+          return 'stopped';
       }
     }
     return 'stopped';
@@ -174,6 +186,7 @@ export class SessionClient {
     try {
       await this.#options.tokens.renew();
     } catch (error) {
+      if (error instanceof CredentialsMissingError) return 'signed_out';
       if (error instanceof ApiError && [400, 401, 403].includes(error.status)) {
         return 'credentials_rejected';
       }

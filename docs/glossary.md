@@ -89,6 +89,10 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Token source**: the extension's holder of one window's access and refresh tokens; a refresh token is used at most once, and a failed refresh logs in again (ADR-0014).
 
+**Sync engine**: the extension's indexing and sync, all in one worker thread: walker, scrubber, chunker, Merkle tree and session client (slice 11c).
+
+**Duty cycle**: the sync engine's CPU cap: after work that took some time, it waits long enough that work stays at 12% of one core (rule 05).
+
 **Session gate**: the session service's checks on a stream: the token when it opens, the session key and repositories at Hello, and the rate limit and repositories on every later message (ADR-0013).
 
 **Hello**: the first message on a session stream; it names the session key and the repositories the window works on.

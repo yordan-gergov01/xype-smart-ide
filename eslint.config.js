@@ -11,6 +11,16 @@ const limits = {
   'no-console': 'error',
 };
 
+// Import rules of the client packages (rule 03, ADR-0008); flat config replaces a rule
+// per block, so the blocks below share these.
+const CROSS_FOLDER = { group: ['../*'], message: 'Import across folders through the @/ alias.' };
+const TS_EXTENSION = { group: ['*.ts'], message: 'Only the scrub worker thread names .ts files.' };
+const FAKES = { group: ['**/testing/*'], message: 'Fakes are for tests only (rule 03).' };
+const VSCODE_BAN = {
+  name: 'vscode',
+  message: 'Only src/extension imports vscode; the engine runs in a worker thread.',
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -51,11 +61,8 @@ export default tseslint.config(
       'no-restricted-imports': [
         'error',
         {
-          patterns: [
-            { group: ['../*'], message: 'Import across folders through the @/ alias.' },
-            { group: ['*.ts'], message: 'Only the scrub worker thread names .ts files.' },
-            { group: ['**/testing/*'], message: 'Fakes are for tests only (rule 03).' },
-          ],
+          paths: [VSCODE_BAN],
+          patterns: [CROSS_FOLDER, TS_EXTENSION, FAKES],
         },
       ],
     },
@@ -66,13 +73,15 @@ export default tseslint.config(
     rules: {
       'no-restricted-imports': [
         'error',
-        {
-          patterns: [
-            { group: ['../*'], message: 'Import across folders through the @/ alias.' },
-            { group: ['*.ts'], message: 'Only the scrub worker thread names .ts files.' },
-          ],
-        },
+        { paths: [VSCODE_BAN], patterns: [CROSS_FOLDER, TS_EXTENSION] },
       ],
+    },
+  },
+  {
+    // The extension host is the only code that may import `vscode` (README, slice 11c).
+    files: ['clients/xype-ai/src/extension/**'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [CROSS_FOLDER, TS_EXTENSION, FAKES] }],
     },
   },
   {
