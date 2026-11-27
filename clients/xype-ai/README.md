@@ -4,7 +4,7 @@ The XYPE AI extension: the client context engine (chunking, call graph, Merkle t
 
 ## Public interface (so far)
 
-The entry point is `src/index.ts` (`exports` in `package.json`). Nothing there imports `vscode`, so the sync can run off the extension host thread. Everything is pure and synchronous except the walker (file system) and the scrub worker (a worker thread).
+The entry point is `src/index.ts` (`exports` in `package.json`). Nothing there imports `vscode` (ESLint enforces it outside `src/extension/`), so the sync runs in a worker thread. Everything is pure and synchronous except the walker (file system) and the scrub worker (a worker thread).
 
 | Export | Module | What |
 |---|---|---|
@@ -38,6 +38,22 @@ npm run grammars -w xype-ai
 ```
 
 The first run lets tree-sitter-cli download its toolchain (wasi-sdk and binaryen, ≈ 700 MB) into the user cache. Later runs skip grammars that are up to date. Without built grammars, the grammar tests skip locally; CI builds them and requires them.
+
+## The extension (slice 11c)
+
+| Folder | What |
+|---|---|
+| `src/extension/` | The extension host entry, the only `vscode` code: credentials in `SecretStorage`, settings, file events, notices |
+| `src/engine/` | The sync worker: idle scheduler and CPU duty cycle (12% of one core), one indexer per repository, the host↔worker protocol |
+
+Settings: `xype.serverUrl` (the edge proxy, `https://…`), `xype.caFile` (the dev CA's PEM) and, per workspace folder, `xype.repositoryId` (the registered repository; folders without one are not indexed). Commands: `XYPE: Sign in` stores the client id and secret an admin issued; `XYPE: Sign out` removes them.
+
+```bash
+npm run build -w xype-ai   # dist/: extension.cjs, syncWorker.cjs, scrubThread.cjs, grammars, rules
+npm run smoke -w xype-ai   # the built extension in a local VS Code (XYPE_VSCODE_EXECUTABLE, or `code` on PATH)
+```
+
+`F5` in this repository starts an Extension Development Host (`.vscode/launch.json`) after `npm run gen && npm run build`.
 
 ## Generated code (ADR-0038)
 

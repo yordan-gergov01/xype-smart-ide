@@ -29,7 +29,7 @@ import {
   scriptedServer,
 } from './testing/fakes';
 import { KEY_UNUSABLE, SessionClient, type StopReason } from './session';
-import { TokenSource } from './tokens';
+import { CredentialsMissingError, TokenSource } from './tokens';
 
 const REPO = '0b9e6f1e-3f4a-4c7e-9a51-7d2c8e1f0a42';
 
@@ -70,7 +70,7 @@ afterEach(async () => {
 });
 
 /** A session over one repository; the script calls `finish()` when the scenario is over. */
-function harness(script: (finish: () => void) => Script): Harness {
+function harness(script: (finish: () => void) => Script, tokenSource?: TokenSource): Harness {
   const keys = new FakeKeyServer();
   const tokenApi = new FakeTokenApi();
   const clock = new FakeClock();
@@ -88,9 +88,9 @@ function harness(script: (finish: () => void) => Script): Harness {
   const server = scriptedServer(script(finish));
   const session = new SessionClient({
     api: keys,
-    tokens: new TokenSource(tokenApi, () =>
-      Promise.resolve({ clientId: 'xc_1', clientSecret: 's' }),
-    ),
+    tokens:
+      tokenSource ??
+      new TokenSource(tokenApi, () => Promise.resolve({ clientId: 'xc_1', clientSecret: 's' })),
     transport: server.transport,
     clock,
     clientVersion: '0.0.0',
@@ -265,6 +265,17 @@ describe('SessionClient', () => {
     h.tokenApi.rejectLogin = true;
     expect(await h.started).toBe('credentials_rejected');
     expect(h.tokenApi.logins).toBeLessThanOrEqual(2);
+  });
+
+  it('stops as signed out when no credentials are stored, asking once', async () => {
+    let asked = 0;
+    const tokens = new TokenSource(new FakeTokenApi(), () => {
+      asked += 1;
+      return Promise.reject(new CredentialsMissingError('not signed in'));
+    });
+    const h = harness(() => () => [], tokens);
+    expect(await h.started).toBe('signed_out');
+    expect(asked).toBe(1);
   });
 
   it('stops when the server refuses its Hello', async () => {

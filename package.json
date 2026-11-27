@@ -15,10 +15,11 @@
     "format:check": "prettier --check . --ignore-path .gitignore --ignore-path .prettierignore",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json && tsc -p clients/xype-ai",
+    "build": "npm run --silent build -w xype-ai",
     "test": "node --test .claude/hooks/hooks.test.mjs && npm test --workspaces --if-present",
     "dup": "jscpd",
     "gen": "npm run --silent gen -w xype-ai",
-    "check": "npm run gen && npm run format:check && npm run lint && npm run typecheck && npm test && npm run dup && npm run proto",
+    "check": "npm run gen && npm run format:check && npm run lint && npm run typecheck && npm run build && npm test && npm run dup && npm run proto",
     "proto": "buf lint proto && buf format -d --exit-code proto"
   },
   "devDependencies": {

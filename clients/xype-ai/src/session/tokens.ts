@@ -13,6 +13,11 @@ export interface ClientCredentials {
 /** Where the credentials live (`SecretStorage` in the extension, slice 11c). */
 export type CredentialSource = () => Promise<ClientCredentials>;
 
+/** The user has not signed in: no client credentials are stored. */
+export class CredentialsMissingError extends Error {
+  override name = 'CredentialsMissingError';
+}
+
 export class TokenSource {
   readonly #api: TokenApi;
   readonly #credentials: CredentialSource;

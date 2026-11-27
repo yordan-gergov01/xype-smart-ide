@@ -46,13 +46,16 @@ export interface LoadedParsers {
   readonly failed: readonly LanguageId[];
 }
 
-/** Loads every grammar it can; a language whose grammar fails is chunked by windows. */
-export async function loadParsers(grammarDir: string): Promise<LoadedParsers> {
+/**
+ * Loads every grammar it can; a language whose grammar fails is chunked by windows.
+ * `runtimeDir` holds `web-tree-sitter.wasm` when running from a bundle.
+ */
+export async function loadParsers(grammarDir: string, runtimeDir?: string): Promise<LoadedParsers> {
   const parsers = new Map<LanguageId, Parser>();
   const failed: LanguageId[] = [];
   for (const id of LANGUAGE_IDS) {
     try {
-      parsers.set(id, await createParser(grammarDir, id));
+      parsers.set(id, await createParser(grammarDir, id, runtimeDir));
     } catch {
       failed.push(id);
     }

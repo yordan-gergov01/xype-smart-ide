@@ -21,7 +21,8 @@ paths:
 - Do make UI keyboard-first and accessible (labels, focus order, contrast).
 
 ## VS Code extension (`clients/xype-ai`)
-- Do keep heavy work (hashing, chunking) off the extension host thread: worker threads, debounced (> 2 s idle), CPU-capped.
+- Do keep heavy work (hashing, chunking) off the extension host thread: worker threads, debounced (> 2 s idle), CPU-capped (10–15% of one core).
+- Do import `vscode` only in `src/extension/`; the engine, context, security, sync and session code runs in worker threads and tests without it (ESLint).
 - Do scrub secrets, then encrypt, before anything leaves the client.
 - Do communicate with webviews only through typed messages (one shared message type module).
 - Never execute a tool that edits code or runs commands without the approval rules in `ApprovalPolicy`.

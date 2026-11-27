@@ -3,7 +3,7 @@
   "compilerOptions": {
     "module": "preserve",
     "moduleResolution": "bundler",
-    "types": ["node"],
+    "types": ["node", "vscode"],
     "exactOptionalPropertyTypes": true,
     "allowImportingTsExtensions": true,
     "allowJs": true,
