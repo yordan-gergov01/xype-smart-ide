@@ -1,0 +1,27 @@
+# Collector for the end-to-end stack only: the debug exporter prints every span with its
+# attributes, so the privacy scan can read them from the collector's log. Never used by
+# the developer's stack (deploy/otel/collector.yaml prints one summary line per batch).
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 96
+  batch: {}
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]

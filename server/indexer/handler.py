@@ -29,7 +29,7 @@ from common_lib.index_messages import (
     decode_job,
     encode,
 )
-from common_lib.messaging import VECTORS, Delivery, MessageBus, RetryableError
+from common_lib.messaging import MAX_RETRIES, VECTORS, Delivery, MessageBus, RetryableError
 from common_lib.secret_bytes import SecretBytes
 from common_lib.security import (
     CryptoBox,
@@ -44,7 +44,7 @@ from common_lib.security import (
 from common_lib.vectors import check_vector
 from indexer.health import Readiness
 from indexer.metrics import IndexerMetrics
-from indexer.scan import Scanner
+from indexer.scan import ScanInterruptedError, Scanner
 
 logger = structlog.get_logger(__name__)
 
@@ -127,7 +127,7 @@ class ChunkIndexer:
         finally:
             key.wipe()
         try:
-            return await self._index(job, plaintext)
+            return await self._index(job, plaintext, final=delivery.attempt >= MAX_RETRIES)
         finally:
             plaintext.wipe()
 
@@ -141,8 +141,10 @@ class ChunkIndexer:
             raise Unopened("key_unusable")
         return key
 
-    async def _index(self, job: ChunkJob, plaintext: SecretBytes) -> EmbeddedChunk | RejectedChunk:
-        rejection = await self._check(plaintext)
+    async def _index(
+        self, job: ChunkJob, plaintext: SecretBytes, *, final: bool
+    ) -> EmbeddedChunk | RejectedChunk:
+        rejection = await self._check(plaintext, final=final)
         if rejection is not None:
             return RejectedChunk(chunk=job.chunk, reason=rejection)
         try:
@@ -172,11 +174,17 @@ class ChunkIndexer:
             vector=list(vector),
         )
 
-    async def _check(self, plaintext: SecretBytes) -> Rejection | None:
-        """The server's re-check (ADR-0019): None when clean, else the fixed reason."""
+    async def _check(self, plaintext: SecretBytes, *, final: bool) -> Rejection | None:
+        """The server's re-check (ADR-0019): None when clean, else the fixed reason. A
+        check that did not finish is retried; only the last delivery settles it."""
         if len(plaintext) > MAX_CHUNK_BYTES:
             return "too_large"
-        verdict = await self._scanner.scan(plaintext.reveal())
+        try:
+            verdict = await self._scanner.scan(plaintext.reveal())
+        except ScanInterruptedError:
+            if final:
+                return "unscannable"
+            raise RetryableError("the re-check did not finish") from None
         return None if verdict == "clean" else verdict
 
 

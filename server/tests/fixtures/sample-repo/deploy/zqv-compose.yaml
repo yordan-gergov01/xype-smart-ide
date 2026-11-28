@@ -1,0 +1,6 @@
+# Zqvorchard local services.
+services:
+  zqvledger:
+    image: zqvorchard/ledger:0.1
+    environment:
+      ZQV_MODE: zqvdemo

@@ -54,6 +54,19 @@ Slice 11 is cut in three (proposed 2026-11-26, awaiting the owner's confirmation
 - Carried forward from the 11a reviews: an upload is cut at 256 chunks and at `MAX_UPLOAD_BYTES` (768 KiB of content plus a per-chunk allowance), below the server's 1 MiB gRPC message limit (`server/backend/grpc/server.py`), which both sides keep in step; the tree keeps every chunk's scrubbed content in memory while it lives (strings cannot be wiped), so a large repository may re-read and re-scrub on demand instead (measure in 11c); the file-link walker test runs only where links can be made (CI on Linux).
 - 11c (this slice): the extension host. `src/extension/` is the only code that imports `vscode` (ESLint); it keeps the client credentials in `SecretStorage` (commands `XYPE: Sign in` / `Sign out`; never the session key), reads the settings `xype.serverUrl`, `xype.caFile` and the per-folder `xype.repositoryId` (how a workspace folder maps to a registered repository; folders without one are not indexed), watches files and shows fixed notices. Everything else runs in one sync worker thread (`src/engine/`): walker, scrub thread, chunker, tree, responder and session. Work starts after 2.5 s without a change, on the 10-minute check and when a repository key first arrives or changes, and is paced to 12% of one core (after each file it waits work × 0.88 / 0.12). Every reindex re-walks through the walker (all exclusions apply) and reuses the chunks of files whose text did not change. Requests waiting to be sent are capped at 64, then the stream closes and backs off. esbuild bundles `dist/extension.cjs`, `syncWorker.cjs` and `scrubThread.cjs` (CommonJS, web-tree-sitter's CommonJS build) with the tree-sitter runtime, the grammars and the rules; `npm run build` is part of `npm run check`. `npm run smoke` runs the built extension in a local VS Code (the Extension Development Host): it activates, the bundled scrub thread scrubs a file, and the sync worker loads every grammar and stops as `signed_out` without credentials. Measured on this repository (2026-11-27): 462 files, 2 720 chunks, about 7.5 MiB of heap for the tree and its chunks, 2.3 s of work (about 19 s at 12%).
 
+Slice 12 is cut in two (2026-11-27):
+- 12a (this slice): the end-to-end run.
+  - A throwaway stack: compose project `xype-e2e` (`deploy/e2e/`), configuration from `devtools.e2e_stack` with fresh values per run, and only the model volume shared.
+  - The seeded sample repository `server/tests/fixtures/sample-repo/`: invented code in the 7 languages, with `zqv` canaries.
+  - The extension's sync worker without VS Code (`clients/xype-ai/scripts/e2e-client.mjs`).
+  - `server/tests/e2e/test_sample_repo.py` checks four things:
+    - the repository is indexed through the edge proxy, the stream, the broker and the indexer into pgvector;
+    - a one-line edit re-embeds exactly one chunk;
+    - the privacy scan finds nothing (`docs/runbooks/e2e.md`);
+    - a positive control shows that the scan reads each kind of place.
+  - The server scrubber's budget is now CPU time of its thread. A scan that did not finish (a timeout, or the child died) is retried, and it settles as `unscannable` only on the last delivery. Before this fix, a clean chunk was rejected that way in 3 of about 15 runs (ADR-0019).
+- 12b: `docs/reports/phase-2.md`, which maps each acceptance item to its proof, plus the traceability check and the open owner decisions.
+
 Slice 8 is cut in three, and its sync settles through Postgres (owner, 2026-11-14):
 - Decision: leaves that need a vector are persisted as pending. The sync applies its tree when the descent ends, also with uploads: leaves to embed are stored `pending`, a rejected leaf becomes `rejected`, one with a vector `indexed`. The vector consumer writes a vector only when its leaf is still pending with the same hash, ordered against `apply` by the repository row lock, so late vectors for deleted or replaced content are dropped. Pending leaves older than a settle window (at least the key TTL) are requested again by the server with bounded retries, also when the roots are equal. Nothing is held in a stream's memory, so a first index survives dropped streams and replicas (R7). This amends ADR-0018 step 5 and ADR-0015 step 5 (in 8c).
 - 8a: messaging foundation: the `xype.index` exchange, the `index.chunks` and `index.vectors` quorum queues with `.dlq` partners on `xype.index.dlx`, declared in the broker definitions with per-service users and permissions (no configure rights); a `MessageBus` seam with an `aio_pika` adapter, a fake and a shared contract (publisher confirms, ack, dead-letter with a fixed reason, redelivery limit, TTL); strict versioned message schemas in `common_lib` (not protobuf: only the gRPC layer may import it) with a privacy allow-list; RabbitMQ testcontainer.
@@ -152,7 +165,8 @@ Carried forward from slice 3 (review):
   no plaintext code, file name, symbol or query in Postgres, Redis, RabbitMQ, logs or
   traces.
 - Slice 12 adds the end-to-end check: after indexing the sample repo, scan every store,
-  log line and span for any substring of the sample repo's code and file names.
+  log line and span for the sample repo's canaries (distinctive words, file names and
+  unkeyed hashes; `docs/runbooks/e2e.md`).
 - The scrubber runs on the client before encryption. The server repeats the check after
   decryption, and a scrubbed secret never reaches the embedder or a provider adapter.
 

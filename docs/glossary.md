@@ -73,6 +73,10 @@ _Avoid_: snippet (reserved for the code around the cursor), fragment
 
 **Parse budget**: how long one file may parse (2 s) before the chunker cuts it by line windows instead (ADR-0017).
 
+**Seeded sample repository**: invented code in the seven indexed languages (`server/tests/fixtures/sample-repo/`) that stands in for a real template repository in the end-to-end run; every distinctive word carries the `zqv` canary.
+
+**Canary**: a value planted so that its appearance anywhere proves a leak; the privacy scan searches every store, log and span for the sample repository's canaries (`docs/runbooks/e2e.md`).
+
 **Scrub corpus**: the shared, synthetic test cases (`packages/scrub-rules/corpus.json`) that both scrubber implementations must reproduce exactly.
 
 **Pending leaf**: a Merkle leaf the server stored whose chunk has no result yet; the indexer's result settles it as `indexed` or `rejected` (ADR-0018, slice 8c2).

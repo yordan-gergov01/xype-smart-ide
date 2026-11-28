@@ -119,8 +119,13 @@ class SecretScrubber:
         self._rules = rules
 
     def scrub(self, text: str) -> ScrubResult:
-        """Raises `ScrubTimeoutError` when the text took longer than its budget."""
-        started = time.perf_counter()
+        """Raises `ScrubTimeoutError` when the text took longer than its budget. The budget
+        is CPU time of this thread, not wall time: a pathological pattern burns CPU, while
+        a busy host (the embedder on the same cores) only delays the scrub, and must not
+        reject a clean chunk for good. The budget is checked only after the rules ran, so it
+        never stops a runaway match: every caller must also kill the scrub past a wall-clock
+        limit (the indexer's scan child, ADR-0019)."""
+        started = time.thread_time()
         mib = len(text.encode("utf-8")) / 2**20
         budget = max(self._rules.budget_ms_per_mib * mib, self._rules.min_budget_ms)
         findings: Counter[str] = Counter()
@@ -131,7 +136,7 @@ class SecretScrubber:
                 continue
             accept = self._is_high_entropy if rule is self._rules.entropy else _always
             text = self._replace(rule, text, findings, accept)
-        if (time.perf_counter() - started) * 1000 > budget:
+        if (time.thread_time() - started) * 1000 > budget:
             raise ScrubTimeoutError("scrubbing exceeded its time budget")
         return ScrubResult(text, dict(findings))
 

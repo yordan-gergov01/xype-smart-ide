@@ -51,9 +51,20 @@ Embedding-only storage is **not** a cryptographic guarantee. Research on embeddi
 
 The privacy suite lives in `server/tests/`. It grows from Phase 2 slice 3 on, with one test per new storage or transport path, and slice 12 adds the end-to-end run.
 
-The end-to-end run indexes the seeded sample repo, then scans Postgres, both Redis instances, RabbitMQ messages, log output and spans for:
-- any substring of the sample's code;
-- the sample's file names;
-- unkeyed hashes of its paths.
+The end-to-end run (`server/tests/e2e/`, runbook `docs/runbooks/e2e.md`) indexes the seeded sample repository (`server/tests/fixtures/sample-repo/`) through the real stack. Then it scans these places:
+- Postgres: a data dump and the data directory, the write-ahead log included;
+- both Redis instances: every key and value in every database, and their files on disk;
+- the backend's and the indexer's temporary files;
+- RabbitMQ: the data directory, and no queue may still hold a message;
+- every service's log;
+- the collector's spans.
+
+It looks for these canaries:
+- the sample's distinctive identifiers, comments and file names;
+- unkeyed SHA-256 hashes of its paths, files and line ranges;
+- a secret planted at run time;
+- the text of a later edit.
+
+A positive control shows that the scan reads each kind of place.
 
 A planted secret must never reach the embedder fake or the mock provider, and a denied path must never produce a `ChunkRef`.

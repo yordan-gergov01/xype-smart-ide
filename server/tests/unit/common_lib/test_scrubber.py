@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from common_lib.security import ScrubTimeoutError, SecretScrubber, load_rules
+from common_lib.security import scrubber as scrubber_module
 
 RULES_DIR = Path(__file__).resolve().parents[4] / "packages" / "scrub-rules"
 RULES = load_rules(RULES_DIR / "rules.json")
@@ -99,12 +100,36 @@ def test_budget_is_measured_on_the_input() -> None:
     assert len(result.text) < len(blob) // 50
 
 
-def test_fails_closed_when_over_budget() -> None:
-    no_budget = SecretScrubber(
-        dataclasses.replace(RULES, budget_ms_per_mib=0.0, min_budget_ms=-1.0)
-    )
+class _Clocks:
+    """Stands in for the scrubber's `time`: wall time jumps by `wall_step` and the
+    thread's CPU time by `cpu_step` (seconds) on every reading."""
+
+    def __init__(self, *, wall_step: float, cpu_step: float) -> None:
+        self._wall = self._cpu = 0.0
+        self._wall_step, self._cpu_step = wall_step, cpu_step
+
+    def perf_counter(self) -> float:
+        self._wall += self._wall_step
+        return self._wall
+
+    def thread_time(self) -> float:
+        self._cpu += self._cpu_step
+        return self._cpu
+
+
+def test_fails_closed_when_over_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(scrubber_module, "time", _Clocks(wall_step=0.0, cpu_step=1.0))
     with pytest.raises(ScrubTimeoutError):
-        no_budget.scrub("x = 1\n")
+        SCRUBBER.scrub("x = 1\n")
+
+
+def test_waiting_for_the_cpu_does_not_count_against_the_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A busy host (the embedder on the same cores) must not reject a clean chunk for
+    good: ten seconds pass on the wall clock while the scrub itself uses almost no CPU."""
+    monkeypatch.setattr(scrubber_module, "time", _Clocks(wall_step=10.0, cpu_step=0.0))
+    assert SCRUBBER.scrub("x = 1\n").clean
 
 
 def test_result_repr_hides_the_text() -> None:

@@ -112,7 +112,8 @@ repos:
         pass_filenames: false
       - id: eslint
         name: eslint
-        entry: npx --no-install eslint --max-warnings=0
+        # Files ESLint ignores (the e2e fixture) would only warn and fail the hook.
+        entry: npx --no-install eslint --max-warnings=0 --no-warn-ignored
         language: unsupported
         files: \.(ts|tsx|js|mjs|cjs)$
       - id: prettier

@@ -27,7 +27,7 @@ Every architecture decision in [PROJECT_BRIEF.md](PROJECT_BRIEF.md) §3, the XYP
 | T21 | Data model incl. XYPE tables, no plaintext code column (3.6) | implemented | ADR-0035 | `server/common_lib/models/`, `server/migrations/`; tests: `server/tests/integration/test_migrations.py` |
 | T22 | Prompt templates as versioned files (3.6, 2) | planned (4) | ADR-0026 (planned) | rule: `.claude/rules/10-llm-prompts.md` |
 | T23 | Privacy: in-memory decrypt, no plaintext at rest, memory hygiene, no-logging (3.7) | in progress (no-logging done; decrypt and memory hygiene in Phase 2) | ADR-0011, ADR-0015 | `server/common_lib/logging_config.py`, `server/backend/api/middleware.py`, `docs/privacy.md`; tests: `server/tests/unit/backend/test_privacy.py` |
-| T24 | Privacy test suite (3.7) | planned (2) | — | — |
+| T24 | Privacy test suite (3.7) | in progress (per-path tests since slice 3; the end-to-end scan in slice 12a; the phase check in 12b) | ADR-0015, ADR-0019 | `server/tests/e2e/test_sample_repo.py`, `server/tests/support/privacy_scan.py`, `server/tests/fixtures/sample-repo/`, `docs/runbooks/e2e.md`, `docs/privacy.md` |
 | T25 | Cache-aside Redis with specified key designs + embedding cache (3.8, 5) | planned (3) | ADR-0021 (planned) | — |
 | T26 | Normalised cache keys (3.8) | planned (3) | ADR-0021 (planned) | — |
 | T27 | Semantic cache, cosine > 0.95 (3.8) | planned (4) | ADR-0025 (planned) | — |
