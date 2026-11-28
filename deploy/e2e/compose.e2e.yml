@@ -1,0 +1,14 @@
+# Overrides for the throwaway end-to-end stack (Phase 2 slice 12, docs/runbooks/e2e.md).
+# A separate compose project with its own volumes and port, so the developer's stack is
+# untouched; only the downloaded models are shared (read-only for the serving container).
+name: xype-e2e
+
+services:
+  otel-collector:
+    # Same target as the base file, so compose replaces that mount.
+    volumes:
+      - ./e2e/collector.yaml:/etc/otelcol/config.yaml:ro
+
+volumes:
+  ollama_data:
+    name: xype_ollama_data

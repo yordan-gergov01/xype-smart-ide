@@ -22,7 +22,7 @@ from support.scanner import InlineScanner
 from common_lib.domain import ChunkRef
 from common_lib.embeddings import EmbeddingError, EmbeddingRefusedError
 from common_lib.index_messages import ChunkJob, WireChunkRef, decode_result, encode
-from common_lib.messaging import VECTORS, Delivery, RetryableError
+from common_lib.messaging import MAX_RETRIES, VECTORS, Delivery, RetryableError
 from common_lib.secret_bytes import SecretBytes
 from common_lib.security import (
     CryptoBox,
@@ -36,7 +36,7 @@ from common_lib.security import (
 from indexer.handler import MAX_CHUNK_BYTES, ChunkIndexer
 from indexer.health import Readiness
 from indexer.metrics import IndexerMetrics
-from indexer.scan import Scanner, ScanVerdict
+from indexer.scan import ScanInterruptedError, Scanner, ScanVerdict
 
 NOW = datetime(2026, 11, 14, 9, 0, tzinfo=UTC)
 MARKER = "def secret_sauce_7f3a():\n    return 42\n"
@@ -110,8 +110,8 @@ class World:
             rest["chunk"] = job.chunk.model_copy(update=chunk)
         return encode(job.model_copy(update=rest))
 
-    async def handle(self, body: bytes) -> str | None:
-        return await self.indexer.handle(Delivery(body, "m-1", "corr-1", 0))
+    async def handle(self, body: bytes, attempt: int = 0) -> str | None:
+        return await self.indexer.handle(Delivery(body, "m-1", "corr-1", attempt))
 
     def outcome(self, name: str) -> float:
         value = self.registry.get_sample_value("xype_indexer_chunks_total", {"outcome": name})
@@ -238,6 +238,25 @@ async def test_an_unusable_answer_is_retried_not_settled(answer: object) -> None
     assert not world.readiness.ready()
 
 
+async def test_an_interrupted_check_is_retried_and_settled_only_on_the_last_delivery() -> None:
+    """Regression (slice 12a e2e): a scan cut off by the host's load settled a clean chunk
+    as `unscannable` for good. Now each delivery but the last is retried."""
+
+    class Interrupted:
+        async def scan(self, chunk: bytes) -> ScanVerdict:
+            raise ScanInterruptedError("timeout")
+
+    world = World(scanner=Interrupted())
+    await world.store_key()
+    for attempt in range(MAX_RETRIES):
+        with pytest.raises(RetryableError):
+            await world.handle(world.job(MARKER), attempt=attempt)
+    assert world.bus.depth(VECTORS) == 0
+    assert await world.handle(world.job(MARKER), attempt=MAX_RETRIES) is None
+    result = decode_result(world.bus.queues[VECTORS][0].body)
+    assert getattr(result, "reason", None) == "unscannable"
+
+
 def test_the_job_carries_only_ciphertext() -> None:
     world = World()
     body = json.loads(world.job(MARKER))
@@ -245,7 +264,7 @@ def test_the_job_carries_only_ciphertext() -> None:
 
 
 async def test_an_unscannable_verdict_is_a_rejection() -> None:
-    """A scan killed past its time (`indexer.scan`) settles the chunk, fail closed."""
+    """A chunk the check itself refuses (`indexer.scan`) settles at once, fail closed."""
 
     class Unscannable:
         async def scan(self, chunk: bytes) -> ScanVerdict:

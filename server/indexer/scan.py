@@ -15,7 +15,9 @@ import sys
 from pathlib import Path
 from typing import Literal, Protocol
 
-from common_lib.errors import DependencyUnavailableError
+import structlog
+
+from common_lib.errors import DependencyUnavailableError, XypeError
 
 type ScanVerdict = Literal["clean", "secret_found", "unscannable"]
 
@@ -31,10 +33,32 @@ _SERVER_DIR = Path(__file__).resolve().parents[1]
 _START_TIMEOUT_S = 30.0
 
 
+class ScanInterruptedError(XypeError):
+    """The check did not finish: past its wall-clock time or the child died. That may
+    be the host's load as much as the chunk, so the caller retries before it settles
+    the chunk as `unscannable` (slice 12a)."""
+
+
 class Scanner(Protocol):
     async def scan(self, chunk: bytes) -> ScanVerdict:
-        """Whether a chunk is clean; `unscannable` when it cannot be checked in time."""
+        """Whether a chunk is clean; `unscannable` when the check itself refused it (not
+        UTF-8, past the scrubber's CPU budget, or a reply that is not one). Raises
+        `ScanInterruptedError` when the check did not finish."""
         ...
+
+
+logger = structlog.get_logger(__name__)
+# Why a chunk could not be checked, as a fixed word (never the exception's message).
+_CAUSES: tuple[tuple[type[BaseException], str], ...] = (
+    (TimeoutError, "timeout"),
+    (asyncio.IncompleteReadError, "child_died"),
+    (ConnectionError, "child_died"),
+    (KeyError, "bad_reply"),
+)
+
+
+def _cause(exc: BaseException) -> str:
+    return next((cause for kind, cause in _CAUSES if isinstance(exc, kind)), "other")
 
 
 class _Child:
@@ -123,16 +147,23 @@ class ProcessScanner:
         child = await self._checkout()
         try:
             verdict = await asyncio.wait_for(child.ask(chunk), self._timeout_s)
-        except (TimeoutError, asyncio.IncompleteReadError, ConnectionError, KeyError):
+        except (TimeoutError, asyncio.IncompleteReadError, ConnectionError, KeyError) as exc:
             # Past its time, dead or talking nonsense: this chunk cannot be checked.
             await self._discard(child)
-            return "unscannable"
+            cause = _cause(exc)
+            logger.warning("indexer.scan.unscannable", cause=cause)
+            if cause == "bad_reply":
+                return "unscannable"
+            raise ScanInterruptedError(cause) from None
         except BaseException:
             # Cancelled mid-scan: the child's state is unknown. No replacement now; the
             # next scan starts one if it needs it.
             await self._discard(child)
             raise
         self._idle.put_nowait(child)
+        if verdict == "unscannable":
+            # The child itself could not check it: not UTF-8, or past the scrub budget.
+            logger.warning("indexer.scan.unscannable", cause="child_verdict")
         return verdict
 
     async def close(self) -> None:

@@ -16,7 +16,7 @@ from support.scanner import InlineScanner
 
 from common_lib.errors import DependencyUnavailableError
 from common_lib.security import SecretScrubber, load_rules
-from indexer.scan import ProcessScanner
+from indexer.scan import ProcessScanner, ScanInterruptedError
 from indexer.scan_worker import MAX_FRAME_BYTES, serve
 
 # About 1 MiB that takes the scrubber some 0.4 s (linear: the ReDoS check's worst shape).
@@ -44,7 +44,8 @@ async def test_a_scan_past_its_time_is_killed_and_the_next_one_runs() -> None:
     await scanner.start()
     try:
         busy = scanner.pids()
-        assert await scanner.scan(SLOW) == "unscannable"
+        with pytest.raises(ScanInterruptedError):
+            await scanner.scan(SLOW)
         assert not scanner.pids() & busy  # killed, not left scanning
         assert await scanner.scan(contract.CLEAN) == "clean"
     finally:
